@@ -592,12 +592,38 @@ def rwkv7_attn_triton(r,w,k,v, kk,iclr, HEAD_SIZE=64, dot_prec='fp32', s0=None):
         HEAD_SIZE, dot_prec, s0
     )
 
-    # Get the remainder
-    remain_xx, last_sT = rwkv7_attn_pytorch_chunk(
-        r[:,si:],torch.exp(-torch.exp(w[:,si:])),k[:,si:],v[:,si:], kk[:,si:],iclr[:,si:], 
-        B, H, C, torch.zeros(B, chunk_remainder, HC, device=w.device, dtype=w.dtype), 
-        chunk_sT, chunk_size=chunk_remainder
+    # # Get the remainder
+    # remain_xx, last_sT = rwkv7_attn_pytorch_chunk(
+    #     r[:,si:],torch.exp(-torch.exp(w[:,si:])),k[:,si:],v[:,si:], kk[:,si:],iclr[:,si:], 
+    #     BATCH_SIZE=B, 
+    #     N_HEAD=H, 
+    #     HEAD_SIZE=C, 
+    #     xx=torch.zeros(B, chunk_remainder, HC, device=w.device, dtype=w.dtype), 
+    #     wkv_state_in=chunk_sT, 
+    #     chunk_size=chunk_remainder
+    # )
+
+    # WARNING: Using padding last chunk FOR DEBUGGING ONLY
+    batch_size = r.shape[0]
+    last_r = torch.zeros(batch_size, 16, r.shape[2], device=r.device, dtype=r.dtype)
+    last_r[:,:chunk_remainder] = r[:,si:]
+    last_w = torch.zeros(batch_size, 16, w.shape[2], device=w.device, dtype=w.dtype)
+    last_w[:,:chunk_remainder] = w[:,si:]
+    last_k = torch.zeros(batch_size, 16, k.shape[2], device=k.device, dtype=k.dtype)
+    last_k[:,:chunk_remainder] = k[:,si:]
+    last_v = torch.zeros(batch_size, 16, v.shape[2], device=v.device, dtype=v.dtype)
+    last_v[:,:chunk_remainder] = v[:,si:]
+    last_kk = torch.zeros(batch_size, 16, kk.shape[2], device=kk.device, dtype=kk.dtype)
+    last_kk[:,:chunk_remainder] = kk[:,si:]
+    last_iclr = torch.zeros(batch_size, 16, iclr.shape[2], device=iclr.device, dtype=iclr.dtype)
+    last_iclr[:,:chunk_remainder] = iclr[:,si:]
+
+    # Forward and Chop off the last chunk overflow
+    remain_xx, last_sT = rwkv7_attn_triton_chunk(
+        last_r,last_w,last_k,last_v,last_kk,last_iclr, 
+        HEAD_SIZE, dot_prec, chunk_sT
     )
+    remain_xx = remain_xx[:,:chunk_remainder]
 
     # Concatenate and return results
     return torch.cat([chunk_xx.to(dtype=w.dtype), remain_xx.to(dtype=w.dtype)], dim=1), last_sT.to(dtype=s0.dtype)
