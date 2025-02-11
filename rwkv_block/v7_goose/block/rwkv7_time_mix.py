@@ -246,6 +246,7 @@ class RWKV7TimeMix(torch.nn.Module):
         ## x070
         ##########
 
+        x_dtype = x.dtype
         shift_state_out = x[:, -1]
         dxprev = torch.cat((shift_state_in.unsqueeze(1), x[:, :-1]), dim=1) - x
 
@@ -347,11 +348,12 @@ class RWKV7TimeMix(torch.nn.Module):
         # xx = RWKV7_OP(wkv_state_out, r, w, k, v, -kk, kk*a)
         ######## cuda-based method 
 
+        xx = xx.to(dtype=x_dtype)
         xx = self.ln_x(xx.view(BATCH_SIZE * SEQ_LEN, IN_EMB_SIZE)).view(BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE)
         xx = xx + ((r.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)*k.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)*self.r_k).sum(dim=-1, keepdim=True) * v.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)).view(BATCH_SIZE,SEQ_LEN,IN_EMB_SIZE)
         xx = self.output(xx * g)
 
-        return xx, shift_state_out, wkv_state_out, v_first_val
+        return xx.to(dtype=x_dtype), shift_state_out, wkv_state_out, v_first_val
 
     @torch.compile(mode="default")
     def forward_with_default_compile(self, in_x:Tensor, shift_state_in:Tensor, wkv_state_in:Tensor, v_first_val_in:Tensor, out_x:Tensor, shift_state_out:Tensor, wkv_state_out:Tensor, v_first_val_out:Tensor) -> tuple[Tensor,Tensor,Tensor,Tensor]:

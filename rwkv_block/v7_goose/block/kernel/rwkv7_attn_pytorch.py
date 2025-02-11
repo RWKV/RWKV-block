@@ -165,7 +165,7 @@ def rwkv7_attn_pytorch_chunk(
         vk = v_.view(BATCH_SIZE,N_HEAD,HEAD_SIZE,1) @ k_.view(BATCH_SIZE,N_HEAD,1,HEAD_SIZE)
         ab = (-kk_).view(BATCH_SIZE,N_HEAD,HEAD_SIZE,1) @ (kk_*a_).view(BATCH_SIZE,N_HEAD,1,HEAD_SIZE)
         vk_state = (vk_state * w_.view(BATCH_SIZE,N_HEAD,1,HEAD_SIZE).float() + vk_state @ ab.float() + vk.float())
-        xx[:,t] = (vk_state.to(dtype=xx.dtype) @ r_.view(BATCH_SIZE,N_HEAD,HEAD_SIZE,1)).view(BATCH_SIZE,N_HEAD*HEAD_SIZE)
+        xx[:,t] = (vk_state @ r_.view(BATCH_SIZE,N_HEAD,HEAD_SIZE,1).float()).view(BATCH_SIZE,N_HEAD*HEAD_SIZE).to(dtype=xx.dtype)
     wkv_state_out = vk_state.to(dtype=wkv_state_in.dtype)
     return xx, wkv_state_out
 
