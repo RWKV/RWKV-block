@@ -233,7 +233,7 @@ class Qwerky7TimeMix(torch.nn.Module):
 
         # Ensure wkv_state_in is initialized
         if wkv_state_in is None:
-            wkv_state_in = torch.zeros(BATCH_SIZE,N_HEAD,HEAD_SIZE,HEAD_SIZE, dtype=torch.float,device=w.device)
+            wkv_state_in = torch.zeros(BATCH_SIZE,N_HEAD,HEAD_SIZE,HEAD_SIZE, dtype=torch.float, device=self.w0.device)
         else:
             wkv_state_in = wkv_state_in.clone()
 

@@ -252,7 +252,7 @@ class RWKV7TimeMix(torch.nn.Module):
 
         # Ensure wkv_state_in is initialized
         if wkv_state_in is None:
-            wkv_state_in = torch.zeros(BATCH_SIZE,N_HEAD,HEAD_SIZE,HEAD_SIZE, dtype=torch.float,device=w.device)
+            wkv_state_in = torch.zeros(BATCH_SIZE,N_HEAD,HEAD_SIZE,HEAD_SIZE, dtype=torch.float, device=self.w0.device)
         else:
             wkv_state_in = wkv_state_in.clone()
 
@@ -394,14 +394,10 @@ def _run_tmix_backend(
         w = torch.exp(-0.606531 * torch.sigmoid(w_lora_result)) # 0.606531 = exp(-0.5)
         xx, wkv_state_out = rwkv7_attn_pytorch(r, w, k, v, kk, iclr, BATCH_SIZE, SEQ_LEN, N_HEAD, HEAD_SIZE, xx, wkv_state_in) 
     elif tmix_backend in ["triton", "triton_smallhead", "triton_small"]:
-        if triton is None:
-            raise ValueError("Triton not available, unable to load triton kernel")
         from .kernel.rwkv7_attn_triton import rwkv7_attn_triton
         w = -F.softplus(-w_lora_result) - 0.5
         xx, wkv_state_out = rwkv7_attn_triton(r, w, k, v, kk, iclr, s0=wkv_state_in, HEAD_SIZE=HEAD_SIZE)
     elif tmix_backend in ["triton_bighead", "triton_big"]:
-        if triton is None:
-            raise ValueError("Triton not available, unable to load triton kernel")
         from .kernel.rwkv7_attn_triton import rwkv7_attn_triton_bighead
         w = -F.softplus(-w_lora_result) - 0.5
         xx, wkv_state_out = rwkv7_attn_triton_bighead(r, w, k, v, kk, iclr, s0=wkv_state_in, HEAD_SIZE=HEAD_SIZE)
