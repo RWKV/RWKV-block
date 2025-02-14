@@ -334,9 +334,13 @@ class Qwerky7TimeMix(torch.nn.Module):
         #     print(f"[WARNING] !!! CUDA backend has potential memory safety issues for qwerky for non-64 head sizes !!!")
 
         # Apply the time mix backend
-        xx = torch.empty_like(x, device=x.device, dtype=x.dtype)
+        xx = torch.empty_like(x, device=x.device, dtype=x.dtype).contiguous() # Contigious is required for memory safety
         xx, wkv_state_out = _run_tmix_backend(tmix_backend, r, w_lora_result, k, v, kk, iclr, BATCH_SIZE, SEQ_LEN, N_HEAD, HEAD_SIZE, xx, wkv_state_in)
         ##########
+
+        # Provide memory safety
+        # Wait for cuda to sync
+        torch.cuda.synchronize()
 
         # xx = self.ln_x(xx.view(BATCH_SIZE * SEQ_LEN, IN_EMB_SIZE)).view(BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE)
         xx = torch.nn.functional.group_norm(xx.view(BATCH_SIZE * SEQ_LEN, IN_EMB_SIZE).float(), num_groups=N_HEAD, weight=self.ln_x.weight.float(), bias=self.ln_x.bias.float(), eps = self.ln_x.eps).view(BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE).to(dtype=x_dtype)
