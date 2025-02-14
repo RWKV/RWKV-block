@@ -333,27 +333,27 @@ class Qwerky7TimeMix(torch.nn.Module):
         # if tmix_backend == "cuda" and HEAD_SIZE != 64:
         #     print(f"[WARNING] !!! CUDA backend has potential memory safety issues for qwerky for non-64 head sizes !!!")
 
+        # Contigous safety
+        xi = torch.zeros_like(x, device=x.device, dtype=x.dtype).contiguous() 
+        xi, r, k, v, kk, iclr = [i.bfloat16().contiguous() for i in [xi, r, k, v, kk, iclr]]
+        w_lora_result, wkv_state_in = [i.float().contiguous() for i in [w_lora_result, wkv_state_in]]
+
         # Apply the time mix backend
-        xx = torch.empty_like(x, device=x.device, dtype=x.dtype).contiguous() # Contigious is required for memory safety
-        xx, wkv_state_out = _run_tmix_backend(tmix_backend, r, w_lora_result, k, v, kk, iclr, BATCH_SIZE, SEQ_LEN, N_HEAD, HEAD_SIZE, xx, wkv_state_in)
+        xx, wkv_state_out = _run_tmix_backend(tmix_backend, r, w_lora_result, k, v, kk, iclr, BATCH_SIZE, SEQ_LEN, N_HEAD, HEAD_SIZE, xi, wkv_state_in)
         ##########
 
-        # Provide memory safety
-        # Wait for cuda to sync
-        torch.cuda.synchronize()
-
         # xx = self.ln_x(xx.view(BATCH_SIZE * SEQ_LEN, IN_EMB_SIZE)).view(BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE)
-        xx = torch.nn.functional.group_norm(xx.view(BATCH_SIZE * SEQ_LEN, IN_EMB_SIZE).float(), num_groups=N_HEAD, weight=self.ln_x.weight.float(), bias=self.ln_x.bias.float(), eps = self.ln_x.eps).view(BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE).to(dtype=x_dtype)
+        xn = torch.nn.functional.group_norm(xx.view(BATCH_SIZE * SEQ_LEN, IN_EMB_SIZE).float(), num_groups=N_HEAD, weight=self.ln_x.weight.float(), bias=self.ln_x.bias.float(), eps = self.ln_x.eps).view(BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE).to(dtype=x_dtype)
 
         # ---
         # Intentionally removed for qwerky7
         # ---
         # xx = xx + ((r.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)*k.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)*self.r_k).sum(dim=-1, keepdim=True) * v.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)).view(BATCH_SIZE,SEQ_LEN,IN_EMB_SIZE)
         
-        xx = self.o_proj(xx * g).to(dtype=x_dtype)
+        xo = self.o_proj(xn * g).to(dtype=x_dtype)
 
         # Return the results
-        return xx, wkv_state_out, v_first_val
+        return xo, wkv_state_out, v_first_val
     
     @torch.compile(mode="default")
     def forward_with_default_compile(self, in_x:Tensor, wkv_state_in:Tensor, v_first_val_in:Tensor, out_x:Tensor, wkv_state_out:Tensor, v_first_val_out:Tensor, position_embeddings: Tuple[torch.Tensor, torch.Tensor]=None) -> tuple[Tensor,Tensor,Tensor]:
