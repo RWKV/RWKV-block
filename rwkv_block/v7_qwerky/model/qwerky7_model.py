@@ -33,8 +33,14 @@ class Qwerky7Model(nn.Module):
         padding_idx = configMap.padding_idx
         head_size = configMap.head_size
 
+        # The following default device overwrite, is to speed up qwen related module initialization
+        default_device = torch.get_default_device()
+        default_dtype = torch.get_default_dtype()
+        torch.set_default_device(device)
+        torch.set_default_dtype(dtype)
+
         # Embedding layer
-        self.embed_tokens = nn.Embedding(vocab_size, hidden_size, padding_idx).to(device, dtype=dtype)
+        self.embed_tokens = nn.Embedding(vocab_size, hidden_size, padding_idx, device=device, dtype=dtype)
 
         # main layers
         self.layers = nn.ModuleList(
@@ -53,6 +59,10 @@ class Qwerky7Model(nn.Module):
                     "wkv": nn.Parameter(torch.zeros(hidden_size // head_size, head_size, head_size, device=device, dtype=torch.float)),
                 })
             self.init_state = nn.ParameterList(stateTuneList)
+
+        # Reset the default device and dtype
+        torch.set_default_device(default_device)
+        torch.set_default_dtype(default_dtype)
 
     def reset_parameters(self):
         '''
