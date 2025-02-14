@@ -176,6 +176,7 @@ class CudaWindBackstepping(torch.autograd.Function):
 
 def rwkv7_attn_cuda(r,w,k,v, kk,iclr, HEAD_SIZE=64, s0=None):
     r,w,k,v, kk,iclr = [i.bfloat16().contiguous() for i in [r,w,k,v,kk,iclr]]
+    s0 = s0.float().contiguous() if s0 is not None else None
     return rwkv7_attn_cuda_no_compile(r,w,k,v, kk,iclr, HEAD_SIZE, s0)
 
 @torch.compiler.disable()
