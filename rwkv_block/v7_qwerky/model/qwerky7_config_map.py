@@ -78,6 +78,8 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
             hidden_size_att=state_dict['model.layers.0.self_attn.k_proj.weight'].shape[0],
             hidden_size_ffn=state_dict['model.layers.0.mlp.up_proj.weight'].shape[0],
 
+            v_first_embedding = 'model.layers.0.self_attn.v0' in state_dict,
+
             **kwargs
         )
         

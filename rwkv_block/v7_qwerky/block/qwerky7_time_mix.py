@@ -22,6 +22,7 @@ class Qwerky7TimeMix(torch.nn.Module):
 
         # Get required props
         hidden_size = configMap.hidden_size
+        v_first_embedding = configMap.v_first_embedding
         # num_hidden_layers = configMap.num_hidden_layers
 
         # Get the layer id
@@ -87,7 +88,7 @@ class Qwerky7TimeMix(torch.nn.Module):
             self.a1 = nn.Parameter(torch.empty(hidden_size,D_AAA_LORA, device=device, dtype=dtype))
             self.a2 = nn.Parameter(torch.empty(D_AAA_LORA,hidden_size, device=device, dtype=dtype))
             
-            if layer_id > 0:
+            if layer_id > 0 or v_first_embedding:
                 self.v0 = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
                 self.v1 = nn.Parameter(torch.empty(hidden_size,D_MV_LORA, device=device, dtype=dtype))
                 self.v2 = nn.Parameter(torch.empty(D_MV_LORA,hidden_size, device=device, dtype=dtype))
@@ -309,7 +310,7 @@ class Qwerky7TimeMix(torch.nn.Module):
         ##########
         # x070
         ##########
-        if self.layer_id == 0 or v_first_val is None:
+        if v_first_val is None:
             v_first_val = v # store the v of the first layer
         else:
             v = v + (v_first_val - v) * torch.sigmoid(self.v0 + (xv @ self.v1) @ self.v2) # add value residual

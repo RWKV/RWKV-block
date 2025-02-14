@@ -18,11 +18,15 @@ class Qwerky7BlockConfigMap(RWKV7BlockConfigMap):
     # # Attention output bias
     # attention_output_bias: bool = False
 
+    # Use embedding for v_first
+    v_first_embedding: bool = True
+
     def __init__(
         self, 
         num_hidden_layers: int,
         hidden_size: int,
         rms_norm_eps: float = 1e-6,
+        v_first_embedding: bool = True,
         # attention_bias: bool = True,
         # attention_output_bias: bool = False,
         head_size: int = 128,
@@ -33,6 +37,7 @@ class Qwerky7BlockConfigMap(RWKV7BlockConfigMap):
         And alias for hidden_size_mlp
         '''
         self.rms_norm_eps = rms_norm_eps
+        self.v_first_embedding = v_first_embedding
         # self.attention_bias = attention_bias
         # self.attention_output_bias = attention_output_bias
         super().__init__(num_hidden_layers, hidden_size, head_size=head_size, **kargs)
