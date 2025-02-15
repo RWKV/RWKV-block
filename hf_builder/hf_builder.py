@@ -293,7 +293,7 @@ def hf_builder(args):
             tokenizer_type = "world"
         elif model_config.vocab_size >= 50304 and model_config.vocab_size <= 50432:
             tokenizer_type = "neox"
-        elif model_config.vocab_size >= 152064 and model_config.vocab_size <= 152064:
+        elif model_config.vocab_size >= 151936 and model_config.vocab_size <= 152064:
             tokenizer_type = "qwen2"
         else:
             raise ValueError(f"Unable to detect tokenizer type for: {tokenizer_type} (vocab_size: {model_config.vocab_size})")
@@ -305,14 +305,14 @@ def hf_builder(args):
     print("Loading model state into class ...")
 
     # Removing known state dict key with issues
-    rmv_state_keys = [
-        "model.layers.0.self_attn.v0",
-        "model.layers.0.self_attn.v1",
-        "model.layers.0.self_attn.v2"
-    ]
-    for key in rmv_state_keys:
-        if key in state_dict:
-            del state_dict[key]
+    # rmv_state_keys = [
+    #     "model.layers.0.self_attn.v0",
+    #     "model.layers.0.self_attn.v1",
+    #     "model.layers.0.self_attn.v2"
+    # ]
+    # for key in rmv_state_keys:
+    #     if key in state_dict:
+    #         del state_dict[key]
 
     model_instance.load_state_dict(state_dict)
 

@@ -11,6 +11,7 @@ else:
 def mmlu_test_runner(
     forward_func,
     batch_size=16,
+    mmlu_device="cuda",
     mmlu_dataset=None
 ):
     '''
@@ -70,7 +71,7 @@ def mmlu_test_runner(
             sub_batch_size = prompt_id.shape[0]
 
             # Forward the prompt_id tokens, and get the logits
-            full_logits = forward_func(prompt_id)
+            full_logits = forward_func(torch.tensor(prompt_id, dtype=torch.long).to(mmlu_device))
 
             # Iterate the individual question answers
             for i in range(sub_batch_size):
@@ -142,7 +143,10 @@ if __name__ == "__main__":
         print("------------------------------------------------")
         print("## Loading HF model:", args.hf_model)
         tokenizer = AutoTokenizer.from_pretrained(args.hf_model, trust_remote_code=True)
-        model = AutoModelForCausalLM.from_pretrained(args.hf_model, trust_remote_code=True, tmix_backend=args.tmix_backend, device=args.device).to(args.device)
+        if args.tmix_backend == "auto":
+            model = AutoModelForCausalLM.from_pretrained(args.hf_model, trust_remote_code=True).to(args.device)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(args.hf_model, trust_remote_code=True, tmix_backend=args.tmix_backend).to(args.device)
 
         print("------------------------------------------------")
         print("## Preparing the dataset")
@@ -164,6 +168,7 @@ if __name__ == "__main__":
         mmlu_test_runner(
             forward_func=model_forward_for_logits,
             batch_size=args.batch_size,
+            mmlu_device=model.device,
             mmlu_dataset=mmlu_dataset
         )
         
