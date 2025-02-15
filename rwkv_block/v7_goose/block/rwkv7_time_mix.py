@@ -365,6 +365,18 @@ def _run_tmix_backend(
         else:
             tmix_backend = "pytorch"
 
+    # Set the default device, if not pytorch
+    # this mitigates with mismatched default device issues
+    # known to occur with triton, fla, and cuda
+    # 
+    # This unfortunately will not work with single thread
+    # multi-gpu setups. Sadly
+    if tmix_backend != "pytorch":
+        device = r.device
+        if torch.get_default_device() != device:
+            torch.set_default_device(device)
+            torch.cuda.set_device(device)
+
     # Tracking the dtype
     xx_dtype = xx.dtype
 
