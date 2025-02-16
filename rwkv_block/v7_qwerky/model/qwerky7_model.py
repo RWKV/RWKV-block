@@ -42,13 +42,13 @@ class Qwerky7Model(nn.Module):
         with torch.device(device):
             # Embedding layer
             self.embed_tokens = nn.Embedding(vocab_size, hidden_size, padding_idx, dtype=dtype)
-            if config.num_hybrid_layers > 0:
+            if config.num_suffix_hybrid_layers > 0:
                 self.hybrid_rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
 
             # main layers
             self.layers = nn.ModuleList([
-                *[Qwerky7LayerBlock(config.new_block_config_map(layer_id=layer_idx)) for layer_idx in range(config.num_hidden_layers - config.num_hybrid_layers)],
-                *[Qwen2DecoderLayer(config.hybrid_layer_config(), config.num_hidden_layers - config.num_hybrid_layers + offset).bfloat16() for offset in range(config.num_hybrid_layers)]
+                *[Qwerky7LayerBlock(config.new_block_config_map(layer_id=layer_idx)) for layer_idx in range(config.num_hidden_layers - config.num_suffix_hybrid_layers)],
+                *[Qwen2DecoderLayer(config.hybrid_layer_config(), config.num_hidden_layers - config.num_suffix_hybrid_layers + offset).bfloat16() for offset in range(config.num_suffix_hybrid_layers)]
             ])
 
             # ln_out
@@ -57,7 +57,7 @@ class Qwerky7Model(nn.Module):
 
             # init state tuning support (only for Qwerky layers)
             if configMap.init_state_wkv:
-                n_qwerky_layers = configMap.num_hidden_layers - configMap.num_hybrid_layers
+                n_qwerky_layers = configMap.num_hidden_layers - configMap.num_suffix_hybrid_layers
                 stateTuneList = [None]*n_qwerky_layers
                 for i in range(n_qwerky_layers):
                     stateTuneList[i] = nn.ParameterDict({
@@ -95,7 +95,7 @@ class Qwerky7Model(nn.Module):
 
         # Reinit the init state tuning support (only for Qwerky layers)
         if configMap.init_state_wkv:
-            n_qwerky_layers = configMap.num_hidden_layers - configMap.num_hybrid_layers
+            n_qwerky_layers = configMap.num_hidden_layers - configMap.num_suffix_hybrid_layers
             if self.init_state is None:
                 stateTuneList = [None]*n_qwerky_layers
                 for i in range(n_qwerky_layers):
@@ -120,7 +120,7 @@ class Qwerky7Model(nn.Module):
         self.norm.weight.data.copy_(state_dict['model.norm.weight'], non_blocking=non_blocking)
         
         if self.configMap.init_state_wkv:
-            n_qwerky_layers = self.configMap.num_hidden_layers - self.configMap.num_hybrid_layers
+            n_qwerky_layers = self.configMap.num_hidden_layers - self.configMap.num_suffix_hybrid_layers
             for i in range(n_qwerky_layers):
                 if 'model.init_state.'+str(i)+'.wkv' in state_dict:
                     self.init_state[i]["wkv"].data.copy_(state_dict['model.init_state.'+str(i)+'.wkv'], non_blocking=True)
@@ -138,7 +138,7 @@ class Qwerky7Model(nn.Module):
         # Get required configs
         hidden_size = self.configMap.hidden_size
         init_state_wkv = self.configMap.init_state_wkv
-        n_qwerky_layers = self.configMap.num_hidden_layers - self.configMap.num_hybrid_layers
+        n_qwerky_layers = self.configMap.num_hidden_layers - self.configMap.num_suffix_hybrid_layers
         head_size = self.configMap.head_size
 
         # Prepare the initial state (only for Qwerky layers)
@@ -179,7 +179,7 @@ class Qwerky7Model(nn.Module):
         '''
         # If no return state is set, let _forward_internal, set it up
         if ret_stateList is None:
-            ret_stateList = [ None for i in range(self.configMap.num_hidden_layers - self.configMap.num_hybrid_layers) ]
+            ret_stateList = [ None for i in range(self.configMap.num_hidden_layers - self.configMap.num_suffix_hybrid_layers) ]
             return self._forward_internal(idx, prv_stateList, ret_stateList, position_ids=position_ids, overwrite_ret_tensor=False)
 
         # Forward internally
@@ -205,7 +205,7 @@ class Qwerky7Model(nn.Module):
 
         # Throw an error if prv_stateList is provided, with hybrid layers
         # as KV cache reuse is not implemented, and we will need the full index
-        if prv_stateList is not None and self.configMap.num_hybrid_layers > 0:
+        if prv_stateList is not None and self.configMap.num_suffix_hybrid_layers > 0:
             raise NotImplementedError('prv_stateList KV cache reuse, for hybrid models, is not implemented for hybrid layers')
         
         # Prepare the state, with the batch size
@@ -233,7 +233,7 @@ class Qwerky7Model(nn.Module):
         forward_chunk_count = math.ceil( x_input_length / forward_chunk_size )
 
         # Iterate through non-hybrid layers only
-        n_qwerky_layers = self.configMap.num_hidden_layers - self.configMap.num_hybrid_layers
+        n_qwerky_layers = self.configMap.num_hidden_layers - self.configMap.num_suffix_hybrid_layers
         for i in range(n_qwerky_layers):
             layer = self.layers[i]
             
@@ -277,13 +277,13 @@ class Qwerky7Model(nn.Module):
                 
         # Generate rotary embeddings if hybrid layers are used
         position_embeddings = None
-        if self.configMap.num_hybrid_layers > 0:
+        if self.configMap.num_suffix_hybrid_layers > 0:
             position_embeddings = self.hybrid_rotary_emb(x_hidden_state, position_ids)
 
         # Process Qwen layers if any
         # Note: We compute position_embeddings once and share them across all Qwen layers
         # This is more efficient than having each layer compute them separately
-        if self.configMap.num_hybrid_layers > 0:
+        if self.configMap.num_suffix_hybrid_layers > 0:
             for i in range(n_qwerky_layers, len(self.layers)):
                 layer = self.layers[i]
                 x_hidden_state = x_hidden_state.to(layer.input_layernorm.weight.device, non_blocking=True)

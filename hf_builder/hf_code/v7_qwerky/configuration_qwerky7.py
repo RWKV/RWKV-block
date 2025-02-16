@@ -40,7 +40,7 @@ class Qwerky7Config(PretrainedConfig):
         forward_chunk_size (`int`, *optional*, defaults to 4096):
             Chunk size for the forward pass. Used to break large inputs into smaller chunks to avoid OOM errors.
             
-        num_hybrid_layers (`int`, *optional*, defaults to 0):
+        num_suffix_hybrid_layers (`int`, *optional*, defaults to 0):
             Number of Qwen2 transformer layers to use at the end of the model.
         hybrid_num_attention_heads (`int`, *optional*, defaults to 0):
             Number of attention heads for Qwen2 layers.
@@ -108,7 +108,7 @@ class Qwerky7Config(PretrainedConfig):
         ########################################
         # Hybrid model configuration
         ########################################
-        num_hybrid_layers=0,
+        num_suffix_hybrid_layers=0,
         hybrid_num_attention_heads=0,
         hybrid_num_key_value_heads=0,
         hybrid_attention_dropout=0.0,
@@ -144,7 +144,7 @@ class Qwerky7Config(PretrainedConfig):
         self.use_cache = use_cache
 
         # Hybrid model configuration
-        self.num_hybrid_layers = num_hybrid_layers
+        self.num_suffix_hybrid_layers = num_suffix_hybrid_layers
         self.hybrid_num_attention_heads = hybrid_num_attention_heads
         self.hybrid_num_key_value_heads = hybrid_num_key_value_heads
         self.hybrid_attention_dropout = hybrid_attention_dropout
@@ -186,7 +186,7 @@ class Qwerky7Config(PretrainedConfig):
             vocab_size=self.vocab_size,
             hidden_size=self.hidden_size,
             intermediate_size=self.hidden_size_ffn or 4 * self.hidden_size,
-            num_hidden_layers=self.num_hybrid_layers,
+            num_hidden_layers=self.num_suffix_hybrid_layers,
             num_attention_heads=self.hybrid_num_attention_heads,
             num_key_value_heads=self.hybrid_num_key_value_heads,
             max_position_embeddings=self.max_position_embeddings,

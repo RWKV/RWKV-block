@@ -303,7 +303,7 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
         super().__init__(config)
 
         # Add rotary embeddings for hybrid layers if needed
-        if config.num_hybrid_layers > 0:
+        if config.num_suffix_hybrid_layers > 0:
             self.rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
     
     def get_input_embeddings(self):
@@ -428,7 +428,7 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
                 return layer(in_x_state, in_qwerky_state, in_v_first)
         
         # Process Qwerky layers
-        n_qwerky_layers = self.config.num_hidden_layers - self.config.num_hybrid_layers
+        n_qwerky_layers = self.config.num_hidden_layers - self.config.num_suffix_hybrid_layers
         for i in range(n_qwerky_layers):
             layer = self.layers[i]
             
@@ -473,11 +473,11 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
 
         # Generate rotary embeddings if hybrid layers are used
         position_embeddings = None
-        if self.config.num_hybrid_layers > 0:
+        if self.config.num_suffix_hybrid_layers > 0:
             position_embeddings = self.rotary_emb(x_hidden_state, position_ids)
 
         # Process Qwen layers if any
-        if self.config.num_hybrid_layers > 0:
+        if self.config.num_suffix_hybrid_layers > 0:
             for i in range(n_qwerky_layers, len(self.layers)):
                 layer = self.layers[i]
                 x_hidden_state = x_hidden_state.to(layer.input_layernorm.weight.device, non_blocking=True)
