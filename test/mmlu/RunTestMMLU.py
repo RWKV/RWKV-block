@@ -144,9 +144,9 @@ if __name__ == "__main__":
         print("## Loading HF model:", args.hf_model)
         tokenizer = AutoTokenizer.from_pretrained(args.hf_model, trust_remote_code=True)
         if args.tmix_backend == "auto":
-            model = AutoModelForCausalLM.from_pretrained(args.hf_model, trust_remote_code=True).to(args.device)
+            model = AutoModelForCausalLM.from_pretrained(args.hf_model, trust_remote_code=True).bfloat16().to(args.device)
         else:
-            model = AutoModelForCausalLM.from_pretrained(args.hf_model, trust_remote_code=True, tmix_backend=args.tmix_backend).to(args.device)
+            model = AutoModelForCausalLM.from_pretrained(args.hf_model, trust_remote_code=True, tmix_backend=args.tmix_backend).bfloat16().to(args.device)
 
         print("------------------------------------------------")
         print("## Preparing the dataset")

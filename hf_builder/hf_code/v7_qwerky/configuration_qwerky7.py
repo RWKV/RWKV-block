@@ -162,36 +162,7 @@ class Qwerky7Config(PretrainedConfig):
 
     @staticmethod
     def from_model_state_dict(state_dict: dict, **kwargs):
-        base_config = RwkvBlockQwerky7ConfigMap.from_model_state_dict(state_dict)
-
-        # Count hybrid layers by checking for absence of r_k in layer weights
-        num_hybrid_layers = 0
-        for i in range(base_config.num_hidden_layers - 1, -1, -1):
-            if f'model.layers.{i}.self_attn.r_k' not in state_dict:
-                num_hybrid_layers += 1
-
-        # Get hybrid layer configuration if needed
-        if num_hybrid_layers > 0:
-            if 'hybrid_num_attention_heads' in kwargs:
-                hybrid_num_attention_heads = kwargs['hybrid_num_attention_heads']
-            elif 'hybrid_num_attention_heads' in state_dict:
-                hybrid_num_attention_heads = state_dict['hybrid_num_attention_heads']
-            else:
-                raise ValueError("hybrid model: hybrid_num_attention_heads not found in state_dict or kwargs")
-
-            if 'hybrid_num_key_value_heads' in kwargs:
-                hybrid_num_key_value_heads = kwargs['hybrid_num_key_value_heads']
-            elif 'hybrid_num_key_value_heads' in state_dict:
-                hybrid_num_key_value_heads = state_dict['hybrid_num_key_value_heads']
-            else:
-                raise ValueError("hybrid model: hybrid_num_key_value_heads not found in state_dict or kwargs")
-
-            kwargs.update({
-                'num_hybrid_layers': num_hybrid_layers,
-                'hybrid_num_attention_heads': hybrid_num_attention_heads,
-                'hybrid_num_key_value_heads': hybrid_num_key_value_heads
-            })
-
+        base_config = RwkvBlockQwerky7ConfigMap.from_model_state_dict(state_dict, **kwargs)
         # Join dictionary with base config and kwargs
         return Qwerky7Config(**{**base_config.__dict__, **kwargs})
     

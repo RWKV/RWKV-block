@@ -37,24 +37,25 @@ class Qwerky7LayerBlock(torch.nn.Module):
         rms_norm_eps = configMap.rms_norm_eps
 
         # Setup the modules
-        self.input_layernorm = Qwen2RMSNorm(hidden_size, rms_norm_eps).to(device, dtype=dtype)
-        self.self_attn = Qwerky7TimeMix(configMap)
+        with torch.device(device):
+            self.input_layernorm = Qwen2RMSNorm(hidden_size, rms_norm_eps).to(dtype=dtype)
+            self.self_attn = Qwerky7TimeMix(configMap)
 
-        self.post_attention_layernorm = Qwen2RMSNorm(hidden_size, eps=rms_norm_eps).to(device, dtype=dtype)
-        self.mlp = Qwen2MLP(Qwerky7Qwen2MLPConfig(
-            hidden_size = hidden_size,
-            intermediate_size = configMap.get_hidden_size_ffn()
-        )).to(device, dtype=dtype)
+            self.post_attention_layernorm = Qwen2RMSNorm(hidden_size, eps=rms_norm_eps).to(dtype=dtype)
+            self.mlp = Qwen2MLP(Qwerky7Qwen2MLPConfig(
+                hidden_size = hidden_size,
+                intermediate_size = configMap.get_hidden_size_ffn()
+            )).to(dtype=dtype)
 
-        # Setup droupout at block level
-        dropout_rate = configMap.dropout_rate
-        if dropout_rate > 0.0:            
-            self.drop0 = nn.Dropout(p = dropout_rate,device=device)
-            self.drop1 = nn.Dropout(p = dropout_rate,device=device)
-        else:
-            self.drop0 = nn.Identity(device=device)
-            self.drop1 = nn.Identity(device=device)
-    
+            # Setup droupout at block level
+            dropout_rate = configMap.dropout_rate
+            if dropout_rate > 0.0:            
+                self.drop0 = nn.Dropout(p = dropout_rate,device=device)
+                self.drop1 = nn.Dropout(p = dropout_rate,device=device)
+            else:
+                self.drop0 = nn.Identity(device=device)
+                self.drop1 = nn.Identity(device=device)
+        
     def reset_parameters(self):
         '''
         Reset the parameters of the block, to an initial state used for training a model from scratch

@@ -24,6 +24,7 @@ import argparse, shutil, json, os.path
 from pathlib import Path
 import torch
 from safetensors.torch import load_file, save_file
+import hjson
 
 ####
 # System path configuration
@@ -243,8 +244,12 @@ def load_hf_config(config_str):
         dict: Parsed config dictionary
     """
     try:
-        # First try parsing as JSON string
-        return json.loads(config_str)
+        config_str = config_str.strip()
+        # Check if there is '{ .. }' in the string
+        if config_str.startswith("{") and config_str.endswith("}"):
+            return hjson.loads(config_str)
+        else:
+            return hjson.loads('{ '+config_str.replace("=", '": "')+' }')
     except json.JSONDecodeError:
         # If that fails, try loading as file path
         if os.path.isfile(config_str):

@@ -39,29 +39,31 @@ class Qwerky7Model(nn.Module):
         torch.set_default_device(device)
         torch.set_default_dtype(dtype)
 
-        # Embedding layer
-        self.embed_tokens = nn.Embedding(vocab_size, hidden_size, padding_idx, device=device, dtype=dtype)
-        if config.num_hybrid_layers > 0:
-            self.hybrid_rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
+        with torch.device(device):
+            # Embedding layer
+            self.embed_tokens = nn.Embedding(vocab_size, hidden_size, padding_idx, dtype=dtype)
+            if config.num_hybrid_layers > 0:
+                self.hybrid_rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
 
-        # main layers
-        self.layers = nn.ModuleList([
-            *[Qwerky7LayerBlock(config.new_block_config_map(layer_id=layer_idx)) for layer_idx in range(config.num_hidden_layers - config.num_hybrid_layers)],
-            *[Qwen2DecoderLayer(config.hybrid_layer_config(), config.num_hidden_layers - config.num_hybrid_layers + offset).bfloat16().to(device) for offset in range(config.num_hybrid_layers)]
-        ])
+            # main layers
+            self.layers = nn.ModuleList([
+                *[Qwerky7LayerBlock(config.new_block_config_map(layer_id=layer_idx)) for layer_idx in range(config.num_hidden_layers - config.num_hybrid_layers)],
+                *[Qwen2DecoderLayer(config.hybrid_layer_config(), config.num_hidden_layers - config.num_hybrid_layers + offset).bfloat16() for offset in range(config.num_hybrid_layers)]
+            ])
 
-        # ln_out
-        self.norm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps).to(device, dtype=dtype)
+            # ln_out
+            self.norm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps).to(dtype)
+            # self.norm.weight = nn.Parameter(torch.ones(hidden_size).bfloat16().to(device)) # Annoying HF meta device bug workaround
 
-        # init state tuning support (only for Qwerky layers)
-        if configMap.init_state_wkv:
-            n_qwerky_layers = configMap.num_hidden_layers - configMap.num_hybrid_layers
-            stateTuneList = [None]*n_qwerky_layers
-            for i in range(n_qwerky_layers):
-                stateTuneList[i] = nn.ParameterDict({
-                    "wkv": nn.Parameter(torch.zeros(hidden_size // head_size, head_size, head_size, device=device, dtype=torch.float)),
-                })
-            self.init_state = nn.ParameterList(stateTuneList)
+            # init state tuning support (only for Qwerky layers)
+            if configMap.init_state_wkv:
+                n_qwerky_layers = configMap.num_hidden_layers - configMap.num_hybrid_layers
+                stateTuneList = [None]*n_qwerky_layers
+                for i in range(n_qwerky_layers):
+                    stateTuneList[i] = nn.ParameterDict({
+                        "wkv": nn.Parameter(torch.zeros(hidden_size // head_size, head_size, head_size, dtype=torch.float)),
+                    })
+                self.init_state = nn.ParameterList(stateTuneList)
 
         # Reset the default device and dtype
         torch.set_default_device(default_device)

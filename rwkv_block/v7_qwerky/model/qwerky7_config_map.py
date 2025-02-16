@@ -124,18 +124,15 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
             if f'model.layers.{i}.self_attn.r_k' not in state_dict:
                 num_hybrid_layers += 1
 
+        joint_args = { **state_dict, **kwargs }
         if num_hybrid_layers > 0:
-            if 'hybrid_num_attention_heads' in kwargs:
-                num_attention_heads = kwargs['hybrid_num_attention_heads']
-            elif 'hybrid_num_attention_heads' in state_dict:
-                num_attention_heads = state_dict['hybrid_num_attention_heads']
+            if 'hybrid_num_attention_heads' in joint_args:
+                num_attention_heads = joint_args['hybrid_num_attention_heads']
             else:
                 raise ValueError("hybrid model : hybrid_num_attention_heads not found in state_dict or kwargs, unable to guess value")
 
-            if 'hybrid_num_key_value_heads' in kwargs:
-                num_key_value_heads = kwargs['hybrid_num_key_value_heads']
-            elif 'hybrid_num_key_value_heads' in state_dict:
-                num_key_value_heads = state_dict['hybrid_num_key_value_heads']
+            if 'hybrid_num_key_value_heads' in joint_args:
+                num_key_value_heads = joint_args['hybrid_num_key_value_heads']
             else:
                 raise ValueError("hybrid model : hybrid_num_key_value_heads not found in state_dict or kwargs, unable to guess value")
 
