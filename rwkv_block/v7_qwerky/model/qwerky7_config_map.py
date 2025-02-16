@@ -16,6 +16,21 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
     padding_idx: int = 151643
 
     # ---
+    # Hybrid models, consist of qwen layers
+    # ---
+
+    # Hybrid models, consist of qwen layers
+    # on top of qwerky layers, golfinch style
+    hybrid_layers: int = 0
+
+    # Transformer layers, and rope scaling related config
+    num_attention_heads: int = 0
+    partial_rotary_factor: float = 1.0
+    rope_theta: float = 1000000.0
+    rope_type: str = "default"
+    max_position_embeddings: int = 32768
+
+    # ---
     # Initializer, with excess arg ignore
     # ---
     def __init__(
