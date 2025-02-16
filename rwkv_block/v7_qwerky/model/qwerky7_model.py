@@ -23,7 +23,8 @@ class Qwerky7Model(nn.Module):
         # Normalize the config
         configMap:Qwerky7ConfigMap = Qwerky7ConfigMap.normalize(config)
         self.configMap = configMap
-
+        config = configMap
+        
         # Get the required prop
         num_hidden_layers = configMap.num_hidden_layers
         vocab_size = configMap.vocab_size

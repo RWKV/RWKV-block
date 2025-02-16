@@ -198,3 +198,15 @@ class Qwerky7Config(PretrainedConfig):
             rope_theta=self.rope_theta,
             use_cache=self.use_cache,
         )
+
+    def num_qwerky_layers(self) -> int:
+        """
+        Returns the number of qwerky layers in the model
+        """
+        return self.num_hidden_layers - self.num_suffix_hybrid_layers - self.num_prefix_hybrid_layers
+
+    def num_hybrid_layers(self) -> int:
+        """
+        Returns the total number of hybrid layers in the model
+        """
+        return self.num_suffix_hybrid_layers + self.num_prefix_hybrid_layers

@@ -141,7 +141,7 @@ if __name__ == "__main__":
         args = parser.parse_args()
 
         print("------------------------------------------------")
-        print("## Loading HF model:", args.hf_model)
+        print("## Loading HF model:", args.hf_model, " , Device:", args.device)
         tokenizer = AutoTokenizer.from_pretrained(args.hf_model, trust_remote_code=True)
         if args.tmix_backend == "auto":
             model = AutoModelForCausalLM.from_pretrained(args.hf_model, trust_remote_code=True).bfloat16().to(args.device)

@@ -285,6 +285,7 @@ def hf_builder(args):
     # Load model weights
     print("Loading model weights raw state ...")
     state_dict = load_model_from_filepath(args.model_source)
+    assert state_dict is not None, f"Failed to load model weights from: {args.model_source}"
 
     # Parse HF config if provided
     hf_config = {}

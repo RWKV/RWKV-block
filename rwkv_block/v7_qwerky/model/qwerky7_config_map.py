@@ -159,12 +159,12 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
             hidden_size=state_dict['model.embed_tokens.weight'].shape[1],
             vocab_size=state_dict['model.embed_tokens.weight'].shape[0],
 
-            head_size = state_dict['model.layers.0.self_attn.r_k'].shape[1],
+            head_size = state_dict[f'model.layers.{num_prefix_hybrid_layers}.self_attn.r_k'].shape[1],
 
-            hidden_size_att=state_dict['model.layers.0.self_attn.k_proj.weight'].shape[0],
-            hidden_size_ffn=state_dict['model.layers.0.mlp.up_proj.weight'].shape[0],
+            hidden_size_att=state_dict[f'model.layers.{num_prefix_hybrid_layers}.self_attn.k_proj.weight'].shape[0],
+            hidden_size_ffn=state_dict[f'model.layers.{num_prefix_hybrid_layers}.mlp.up_proj.weight'].shape[0],
 
-            v_first_embedding = 'model.layers.0.self_attn.v0' in state_dict,
+            v_first_embedding = f'model.layers.{num_prefix_hybrid_layers}.self_attn.v0' in state_dict,
 
             num_suffix_hybrid_layers = num_suffix_hybrid_layers,
             num_prefix_hybrid_layers = num_prefix_hybrid_layers,
