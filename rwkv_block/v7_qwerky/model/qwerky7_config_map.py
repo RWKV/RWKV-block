@@ -21,8 +21,9 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
     # ---
 
     # Hybrid models, consist of qwen layers
-    # on top of qwerky layers, golfinch style
+    # on top and/or bottom of qwerky layers, golfinch style
     num_suffix_hybrid_layers: int = 0
+    num_prefix_hybrid_layers: int = 0
 
     # Transformer layers, and rope scaling related config
     hybrid_num_attention_heads: int = 0
@@ -44,6 +45,7 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
         padding_idx: int = 151643,
         # ---
         num_suffix_hybrid_layers: int = 0,
+        num_prefix_hybrid_layers: int = 0,
         hybrid_num_attention_heads: int = 0,
         hybrid_num_key_value_heads: int = 0,
         rope_theta: float = 1000000.0,
@@ -60,6 +62,7 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
         self.max_position_embeddings = max_position_embeddings
         # ---
         self.num_suffix_hybrid_layers = num_suffix_hybrid_layers
+        self.num_prefix_hybrid_layers = num_prefix_hybrid_layers
         self.hybrid_num_attention_heads = hybrid_num_attention_heads
         self.hybrid_num_key_value_heads = hybrid_num_key_value_heads
         self.hybrid_attention_dropout = hybrid_attention_dropout
@@ -119,13 +122,23 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
         # From the last layer, count the number of layers without r_k
         # which implies they are qwen layers]
         num_suffix_hybrid_layers = 0
-
         for i in range(num_hidden_layers-1, -1, -1):
             if f'model.layers.{i}.self_attn.r_k' not in state_dict:
                 num_suffix_hybrid_layers += 1
+            else:
+                break
+
+        # Get the number of prefix hybrid layers
+        num_prefix_hybrid_layers = 0
+        for i in range(0, num_hidden_layers):
+            if f'model.layers.{i}.self_attn.r_k' not in state_dict:
+                num_prefix_hybrid_layers += 1
+            else:
+                break
+        num_hybrid_layers = num_suffix_hybrid_layers + num_prefix_hybrid_layers
 
         joint_args = { **state_dict, **kwargs }
-        if num_suffix_hybrid_layers > 0:
+        if num_hybrid_layers > 0:
             if 'hybrid_num_attention_heads' in joint_args:
                 num_attention_heads = joint_args['hybrid_num_attention_heads']
             else:
@@ -154,7 +167,19 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
             v_first_embedding = 'model.layers.0.self_attn.v0' in state_dict,
 
             num_suffix_hybrid_layers = num_suffix_hybrid_layers,
+            num_prefix_hybrid_layers = num_prefix_hybrid_layers,
 
             **kwargs
         )
-        
+
+    def num_qwerky_layers(self) -> int:
+        """
+        Returns the number of qwerky layers in the model
+        """
+        return self.num_hidden_layers - self.num_suffix_hybrid_layers - self.num_prefix_hybrid_layers
+
+    def num_hybrid_layers(self) -> int:
+        """
+        Returns the total number of hybrid layers in the model
+        """
+        return self.num_suffix_hybrid_layers + self.num_prefix_hybrid_layers

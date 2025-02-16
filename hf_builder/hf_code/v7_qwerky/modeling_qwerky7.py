@@ -303,7 +303,7 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
         super().__init__(config)
 
         # Add rotary embeddings for hybrid layers if needed
-        if config.num_suffix_hybrid_layers > 0:
+        if config.num_prefix_hybrid_layers > 0 or config.num_suffix_hybrid_layers > 0:
             self.rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
     
     def get_input_embeddings(self):
@@ -427,20 +427,45 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
             else:
                 return layer(in_x_state, in_qwerky_state, in_v_first)
         
+        # Generate rotary embeddings if hybrid layers are used
+        position_embeddings = None
+        if self.config.num_prefix_hybrid_layers > 0 or self.config.num_suffix_hybrid_layers > 0:
+            position_embeddings = self.rotary_emb(x_hidden_state, position_ids)
+
+        # Process prefix hybrid layers if any
+        if self.config.num_prefix_hybrid_layers > 0:
+            for i in range(self.config.num_prefix_hybrid_layers):
+                layer = self.layers[i]
+                x_hidden_state = x_hidden_state.to(layer.input_layernorm.weight.device, non_blocking=True)
+                x_hidden_state = layer(
+                    hidden_states=x_hidden_state,
+                    position_embeddings=position_embeddings,
+                    position_ids=position_ids,
+                    past_key_value=None,
+                    output_attentions=False,
+                    use_cache=False,
+                )[0]
+
+                if output_hidden_states:
+                    all_hidden_states += (x_hidden_state,)
+
         # Process Qwerky layers
-        n_qwerky_layers = self.config.num_hidden_layers - self.config.num_suffix_hybrid_layers
-        for i in range(n_qwerky_layers):
+        qwerky_start = self.config.num_prefix_hybrid_layers
+        qwerky_end = qwerky_start + self.config.num_qwerky_layers()
+        for i in range(qwerky_start, qwerky_end):
             layer = self.layers[i]
             
             # Single pass, optimized
             if forward_chunk_count <= 1:
-                x_hidden_state, ret_subList, v_first = qwerky_layer_forward(layer, x_hidden_state, prv_stateList[i], v_first)
-                ret_stateList[i] = ret_subList
+                qwerky_idx = i - qwerky_start
+                x_hidden_state, ret_subList, v_first = qwerky_layer_forward(layer, x_hidden_state, prv_stateList[qwerky_idx], v_first)
+                ret_stateList[qwerky_idx] = ret_subList
             else:
                 # Chunk processing
                 new_x_hidden_state_arr = [None]*forward_chunk_count
                 v_first_arr = [None]*forward_chunk_count if v_first is None else None
-                ret_subList = prv_stateList[i]
+                qwerky_idx = i - qwerky_start
+                ret_subList = prv_stateList[qwerky_idx]
 
                 # Forward in chunks
                 for chunk_idx in range(forward_chunk_count):
@@ -462,23 +487,18 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
                 x_hidden_state = torch.cat(new_x_hidden_state_arr, dim=1)
                 if v_first_arr is not None:
                     v_first = torch.cat(v_first_arr, dim=1)
-                ret_stateList[i] = ret_subList
+                ret_stateList[qwerky_idx] = ret_subList
 
             # Save the state to cache if needed
             if past_key_values is not None and use_cache:
-                past_key_values.update(ret_stateList[i], x_input_length, i)
+                past_key_values.update(ret_stateList[qwerky_idx], x_input_length, qwerky_idx)
 
             if output_hidden_states:
                 all_hidden_states += (x_hidden_state,)
 
-        # Generate rotary embeddings if hybrid layers are used
-        position_embeddings = None
+        # Process suffix hybrid layers if any
         if self.config.num_suffix_hybrid_layers > 0:
-            position_embeddings = self.rotary_emb(x_hidden_state, position_ids)
-
-        # Process Qwen layers if any
-        if self.config.num_suffix_hybrid_layers > 0:
-            for i in range(n_qwerky_layers, len(self.layers)):
+            for i in range(qwerky_end, len(self.layers)):
                 layer = self.layers[i]
                 x_hidden_state = x_hidden_state.to(layer.input_layernorm.weight.device, non_blocking=True)
                 x_hidden_state = layer(
