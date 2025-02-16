@@ -224,7 +224,7 @@ class Qwerky7Model(nn.Module):
         v_first = None
 
         # Uses the input hidden state, as the v_first if v_first_embedding is enabled
-        if self.configMap.use_v_first:
+        if self.configMap.v_first_embedding:
             v_first = x_hidden_state.clone()
 
         # Force overwrite_ret_tensor to False, if ret_stateList is None
