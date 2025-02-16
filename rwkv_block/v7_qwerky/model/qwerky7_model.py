@@ -6,7 +6,7 @@ from typing import Union
 from .qwerky7_config_map import Qwerky7ConfigMap
 from ..block.qwerky7_layer_block import Qwerky7LayerBlock
 
-from transformers.models.qwen2.modeling_qwen2 import Qwen2RMSNorm
+from transformers.models.qwen2.modeling_qwen2 import Qwen2RMSNorm, Qwen2DecoderLayer, Qwen2RotaryEmbedding
 
 class Qwerky7Model(nn.Module):
     '''
@@ -41,11 +41,14 @@ class Qwerky7Model(nn.Module):
 
         # Embedding layer
         self.embed_tokens = nn.Embedding(vocab_size, hidden_size, padding_idx, device=device, dtype=dtype)
+        if config.hybrid_layers > 0:
+            self.rotary_emb = Qwen2RotaryEmbedding(config=config)
 
         # main layers
-        self.layers = nn.ModuleList(
-            [Qwerky7LayerBlock(config.new_block_config_map(layer_id=layer_idx)) for layer_idx in range(config.num_hidden_layers)]
-        )
+        self.layers = nn.ModuleList([
+            *[Qwerky7LayerBlock(config.new_block_config_map(layer_id=layer_idx)) for layer_idx in range(config.num_hidden_layers - config.hybrid_layers)],
+            *[Qwen2DecoderLayer(config, config.num_hidden_layers - config.hybrid_layers + offset) for offset in range(config.hybrid_layers)]
+        ])
 
         # ln_out
         self.norm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps).to(device, dtype=dtype)
@@ -178,7 +181,7 @@ class Qwerky7Model(nn.Module):
 
         # If no return state is set, let _forward_internal, set it up
         if ret_stateList is None:
-            ret_stateList = [ None for i in range(self.configMap.num_hidden_layers) ]
+            ret_stateList = [ None for i in range(self.configMap.num_hidden_layers - self.configMap.hybrid_layers) ]
             return self._forward_internal(idx, prv_stateList, ret_stateList, overwrite_ret_tensor=False)
 
         # Forward internally
