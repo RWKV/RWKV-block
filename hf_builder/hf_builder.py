@@ -20,7 +20,7 @@
 # - Load the model weights into the configured model
 # - Save the model to the output directory
 
-import argparse, shutil, json
+import argparse, shutil, json, os.path
 from pathlib import Path
 import torch
 from safetensors.torch import load_file, save_file
@@ -232,6 +232,27 @@ def hf_script_builder(
 ####
 # Builder scripts
 ####
+def load_hf_config(config_str):
+    """
+    Load HuggingFace config from either a JSON string or a path to a JSON file.
+    
+    Args:
+        config_str: Either a JSON string or path to JSON file
+        
+    Returns:
+        dict: Parsed config dictionary
+    """
+    try:
+        # First try parsing as JSON string
+        return json.loads(config_str)
+    except json.JSONDecodeError:
+        # If that fails, try loading as file path
+        if os.path.isfile(config_str):
+            with open(config_str) as f:
+                return json.load(f)
+        else:
+            raise ValueError(f"hf_config must be valid JSON string or path to JSON file, got: {config_str}")
+
 def hf_builder(args):
     # Print the args
     print("-----------------------------")
@@ -240,6 +261,8 @@ def hf_builder(args):
     print(f"Model Source    : {args.model_source}")
     print(f"Tokenizer Type  : {args.tokenizer_type}")
     print(f"Output Directory: {args.output_dir}")
+    if args.hf_config:
+        print(f"HF Config      : {args.hf_config}")
     print("-----------------------------")
 
     # Get the model class
@@ -258,14 +281,23 @@ def hf_builder(args):
     print("Loading model weights raw state ...")
     state_dict = load_model_from_filepath(args.model_source)
 
+    # Parse HF config if provided
+    hf_config = {}
+    if args.hf_config:
+        print("Loading HF config overrides ...")
+        hf_config = load_hf_config(args.hf_config)
+        print("HF Config Overrides:")
+        print(json.dumps(hf_config, indent=2))
+        print("-----------------------------")
+
     # Load for the respective class
     print("Loading model config from weights ...")
     if model_class == "v7_goose":
         from hf_code.v7_goose.configuration_rwkv7 import RWKV7Config
-        model_config = RWKV7Config.from_model_state_dict(state_dict)
+        model_config = RWKV7Config.from_model_state_dict(state_dict, **hf_config)
     elif model_class == "v7_qwerky":
         from hf_code.v7_qwerky.configuration_qwerky7 import Qwerky7Config
-        model_config = Qwerky7Config.from_model_state_dict(state_dict)
+        model_config = Qwerky7Config.from_model_state_dict(state_dict, **hf_config)
     else:
         raise ValueError(f"Unsupported model class: {model_class}")
     
@@ -372,6 +404,7 @@ def main():
     parser.add_argument("output_dir", help="Directory to output the converted HuggingFace model")
     parser.add_argument("--model_class", default="v7_goose", help="Model class (default: v7_goose)")
     parser.add_argument("--tokenizer_type", default="auto", help="Tokenizer to use, either 'auto','world','neox' or 'qwen2' (default: auto)")
+    parser.add_argument("--hf-config", help="HuggingFace config overrides as JSON string or path to JSON file")
     args = parser.parse_args()
     hf_builder(args)
 

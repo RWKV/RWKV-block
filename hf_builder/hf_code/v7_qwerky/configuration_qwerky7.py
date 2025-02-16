@@ -1,6 +1,7 @@
 """ RWKV configuration"""
 
 from transformers.configuration_utils import PretrainedConfig
+from transformers.models.qwen2.configuration_qwen2 import Qwen2Config
 # from transformers.utils import logging
 # logger = logging.get_logger(__name__)
 
@@ -39,6 +40,19 @@ class Qwerky7Config(PretrainedConfig):
         forward_chunk_size (`int`, *optional*, defaults to 4096):
             Chunk size for the forward pass. Used to break large inputs into smaller chunks to avoid OOM errors.
             
+        num_hybrid_layers (`int`, *optional*, defaults to 0):
+            Number of Qwen2 transformer layers to use at the end of the model.
+        hybrid_num_attention_heads (`int`, *optional*, defaults to 0):
+            Number of attention heads for Qwen2 layers.
+        hybrid_num_key_value_heads (`int`, *optional*, defaults to 0):
+            Number of key/value heads for Qwen2 layers.
+        hybrid_attention_dropout (`float`, *optional*, defaults to 0.0):
+            Dropout probability for attention weights in Qwen2 layers.
+        rope_theta (`float`, *optional*, defaults to 1000000.0):
+            Base period for rotary position embeddings in Qwen2 layers.
+        max_position_embeddings (`int`, *optional*, defaults to 32768):
+            Maximum sequence length supported by position embeddings.
+
         device (`str`, *optional*):
             Device to use for the model. Use the respective torch.device types
         dtype (`str`, *optional*):
@@ -91,9 +105,15 @@ class Qwerky7Config(PretrainedConfig):
         dropout_rate=0.0,
         # Internal forward chunk size
         forward_chunk_size=4096,
-        # # Torch device and dtype
-        # device=None,
-        # dtype=None,
+        ########################################
+        # Hybrid model configuration
+        ########################################
+        num_hybrid_layers=0,
+        hybrid_num_attention_heads=0,
+        hybrid_num_key_value_heads=0,
+        hybrid_attention_dropout=0.0,
+        rope_theta=1000000.0,
+        max_position_embeddings=32768,
         ########################################
         # HF specific configuration
         ########################################
@@ -120,11 +140,16 @@ class Qwerky7Config(PretrainedConfig):
         self.init_state_wkv = init_state_wkv
         self.forward_chunk_size = forward_chunk_size
 
-        # self.device = device
-        # self.dtype = dtype
-
         self.dropout_rate = dropout_rate
         self.use_cache = use_cache
+
+        # Hybrid model configuration
+        self.num_hybrid_layers = num_hybrid_layers
+        self.hybrid_num_attention_heads = hybrid_num_attention_heads
+        self.hybrid_num_key_value_heads = hybrid_num_key_value_heads
+        self.hybrid_attention_dropout = hybrid_attention_dropout
+        self.rope_theta = rope_theta
+        self.max_position_embeddings = max_position_embeddings
         
         # Forward to the HF PretrainedConfig
         super().__init__(
@@ -138,14 +163,42 @@ class Qwerky7Config(PretrainedConfig):
     @staticmethod
     def from_model_state_dict(state_dict: dict, **kwargs):
         base_config = RwkvBlockQwerky7ConfigMap.from_model_state_dict(state_dict)
-        # Join dictionary with **goose_config.__dict__ and **kwargs
+
+        # Count hybrid layers by checking for absence of r_k in layer weights
+        num_hybrid_layers = 0
+        for i in range(base_config.num_hidden_layers - 1, -1, -1):
+            if f'model.layers.{i}.self_attn.r_k' not in state_dict:
+                num_hybrid_layers += 1
+
+        # Get hybrid layer configuration if needed
+        if num_hybrid_layers > 0:
+            if 'hybrid_num_attention_heads' in kwargs:
+                hybrid_num_attention_heads = kwargs['hybrid_num_attention_heads']
+            elif 'hybrid_num_attention_heads' in state_dict:
+                hybrid_num_attention_heads = state_dict['hybrid_num_attention_heads']
+            else:
+                raise ValueError("hybrid model: hybrid_num_attention_heads not found in state_dict or kwargs")
+
+            if 'hybrid_num_key_value_heads' in kwargs:
+                hybrid_num_key_value_heads = kwargs['hybrid_num_key_value_heads']
+            elif 'hybrid_num_key_value_heads' in state_dict:
+                hybrid_num_key_value_heads = state_dict['hybrid_num_key_value_heads']
+            else:
+                raise ValueError("hybrid model: hybrid_num_key_value_heads not found in state_dict or kwargs")
+
+            kwargs.update({
+                'num_hybrid_layers': num_hybrid_layers,
+                'hybrid_num_attention_heads': hybrid_num_attention_heads,
+                'hybrid_num_key_value_heads': hybrid_num_key_value_heads
+            })
+
+        # Join dictionary with base config and kwargs
         return Qwerky7Config(**{**base_config.__dict__, **kwargs})
     
     def new_block_config_map(self, **kwargs) -> 'Qwerky7BlockConfigMap':
         '''
         Returns a new config map with updated values
         '''
-
         new_dict = {}
         for key in Qwerky7BlockConfigMap.__dataclass_fields__:
             if key in self.__dict__:
@@ -153,3 +206,20 @@ class Qwerky7Config(PretrainedConfig):
         new_dict.update(kwargs)
 
         return Qwerky7BlockConfigMap(**new_dict)
+
+    def hybrid_layer_config(self) -> Qwen2Config:
+        '''
+        Returns the Qwen2 configuration for hybrid layers
+        '''
+        return Qwen2Config(
+            vocab_size=self.vocab_size,
+            hidden_size=self.hidden_size,
+            intermediate_size=self.hidden_size_ffn or 4 * self.hidden_size,
+            num_hidden_layers=self.num_hybrid_layers,
+            num_attention_heads=self.hybrid_num_attention_heads,
+            num_key_value_heads=self.hybrid_num_key_value_heads,
+            max_position_embeddings=self.max_position_embeddings,
+            attention_dropout=self.hybrid_attention_dropout,
+            rope_theta=self.rope_theta,
+            use_cache=self.use_cache,
+        )
