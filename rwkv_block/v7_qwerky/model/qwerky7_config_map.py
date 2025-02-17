@@ -137,15 +137,15 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
                 break
         num_hybrid_layers = num_suffix_hybrid_layers + num_prefix_hybrid_layers
 
-        joint_args = { **state_dict, **kwargs }
+        joint_state_args = { **state_dict, **kwargs }
         if num_hybrid_layers > 0:
-            if 'hybrid_num_attention_heads' in joint_args:
-                num_attention_heads = joint_args['hybrid_num_attention_heads']
+            if 'hybrid_num_attention_heads' in joint_state_args:
+                num_attention_heads = joint_state_args['hybrid_num_attention_heads']
             else:
                 raise ValueError("hybrid model : hybrid_num_attention_heads not found in state_dict or kwargs, unable to guess value")
 
-            if 'hybrid_num_key_value_heads' in joint_args:
-                num_key_value_heads = joint_args['hybrid_num_key_value_heads']
+            if 'hybrid_num_key_value_heads' in joint_state_args:
+                num_key_value_heads = joint_state_args['hybrid_num_key_value_heads']
             else:
                 raise ValueError("hybrid model : hybrid_num_key_value_heads not found in state_dict or kwargs, unable to guess value")
 
@@ -153,8 +153,8 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
         if 'init_state.0.wkv' in state_dict:
             kwargs['init_state_wkv'] = True
 
-        # Initialize the config map, with the configured values
-        return Qwerky7ConfigMap(
+        # parsed args with some optionality
+        parsed_args = {
             num_hidden_layers=num_hidden_layers,
             hidden_size=state_dict['model.embed_tokens.weight'].shape[1],
             vocab_size=state_dict['model.embed_tokens.weight'].shape[0],
@@ -164,12 +164,15 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
             hidden_size_att=state_dict[f'model.layers.{num_prefix_hybrid_layers}.self_attn.k_proj.weight'].shape[0],
             hidden_size_ffn=state_dict[f'model.layers.{num_prefix_hybrid_layers}.mlp.up_proj.weight'].shape[0],
 
-            v_first_embedding = f'model.layers.{num_prefix_hybrid_layers}.self_attn.v0' in state_dict,
+            v_first_embedding = f'model.layers.{num_prefix_hybrid_layers}.self_attn.v0' in state_dict and state_dict[f'model.layers.{num_prefix_hybrid_layers}.self_attn.v0'] is not None,
 
             num_suffix_hybrid_layers = num_suffix_hybrid_layers,
             num_prefix_hybrid_layers = num_prefix_hybrid_layers,
+        }
 
-            **kwargs
+        # Initialize the config map, with the configured values
+        return Qwerky7ConfigMap(
+            **{ **parsed_args, **kwargs }
         )
 
     def num_qwerky_layers(self) -> int:
