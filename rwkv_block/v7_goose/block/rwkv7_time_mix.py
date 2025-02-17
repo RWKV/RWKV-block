@@ -27,7 +27,7 @@ _has_cuda = torch.cuda.is_available()
 
 # Warning if FLA is not available
 if not _has_fla:
-    print("[WARNING] fla not available, falling back to cuda or pytorch mode - install fla from `https://github.com/fla-org/flash-linear-attention`")
+    print("[WARNING] fla not available, falling back to triton, cuda or pytorch mode - install fla from `https://github.com/fla-org/flash-linear-attention`")
 
 # Check if the FLA package is available
 class RWKV7TimeMix(torch.nn.Module):

@@ -46,8 +46,8 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
         # ---
         num_suffix_hybrid_layers: int = 0,
         num_prefix_hybrid_layers: int = 0,
-        hybrid_num_attention_heads: int = 0,
-        hybrid_num_key_value_heads: int = 0,
+        hybrid_num_attention_heads: int = 1,
+        hybrid_num_key_value_heads: int = 1,
         rope_theta: float = 1000000.0,
         hybrid_attention_dropout: float = 0.0,
         max_position_embeddings: int = 32768,
@@ -70,7 +70,7 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
         self.rope_theta = rope_theta
         # ---
         super().__init__(num_hidden_layers=num_hidden_layers, hidden_size=hidden_size, **kwargs)
-
+        
     @staticmethod
     def normalize(config_map: any) -> 'Qwerky7ConfigMap':
         '''
