@@ -144,6 +144,7 @@ class Qwerky7Config(PretrainedConfig):
         self.head_size = head_size
         self.tmix_backend = tmix_backend
         self.init_state_wkv = init_state_wkv
+        self.v_first_embedding = v_first_embedding
         self.forward_chunk_size = forward_chunk_size
 
         self.dropout_rate = dropout_rate
