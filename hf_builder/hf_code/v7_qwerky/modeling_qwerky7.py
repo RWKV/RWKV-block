@@ -302,9 +302,8 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
         self.config = config
         super().__init__(config)
 
-        # Add rotary embeddings for hybrid layers if needed
-        if config.num_prefix_hybrid_layers > 0 or config.num_suffix_hybrid_layers > 0:
-            self.rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
+        # Add rotary embeddings for all layers
+        self.rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
     
     def get_input_embeddings(self):
         return self.emb
@@ -419,18 +418,16 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
         all_attns = () if output_attentions else None
 
         # Block forward, with gradient if needed
-        def qwerky_layer_forward(layer, in_x_state, in_qwerky_state, in_v_first):
+        def qwerky_layer_forward(layer, in_x_state, in_qwerky_state, in_v_first, in_position_embeddings):
             if self.gradient_checkpointing and self.training:
                 return self._gradient_checkpointing_func(
-                    layer.__call__, in_x_state, in_qwerky_state, in_v_first
+                    layer.__call__, in_x_state, in_qwerky_state, in_v_first, position_embeddings=in_position_embeddings
                 )
             else:
-                return layer(in_x_state, in_qwerky_state, in_v_first)
+                return layer(in_x_state, in_qwerky_state, in_v_first, position_embeddings=in_position_embeddings)
         
-        # Generate rotary embeddings if hybrid layers are used
-        position_embeddings = None
-        if self.config.num_prefix_hybrid_layers > 0 or self.config.num_suffix_hybrid_layers > 0:
-            position_embeddings = self.rotary_emb(x_hidden_state, position_ids)
+        # Generate rotary embeddings for all layers
+        position_embeddings = self.rotary_emb(x_hidden_state, position_ids)
 
         # Process prefix hybrid layers if any
         if self.config.num_prefix_hybrid_layers > 0:
@@ -451,14 +448,14 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
 
         # Process Qwerky layers
         qwerky_start = self.config.num_prefix_hybrid_layers
-        qwerky_end = qwerky_start + self.config.num_qwerky_layers()
+        qwerky_end = qwerky_start + (self.config.num_hidden_layers - self.config.num_suffix_hybrid_layers - self.config.num_prefix_hybrid_layers)
         for i in range(qwerky_start, qwerky_end):
             layer = self.layers[i]
             
             # Single pass, optimized
             if forward_chunk_count <= 1:
                 qwerky_idx = i - qwerky_start
-                x_hidden_state, ret_subList, v_first = qwerky_layer_forward(layer, x_hidden_state, prv_stateList[qwerky_idx], v_first)
+                x_hidden_state, ret_subList, v_first = qwerky_layer_forward(layer, x_hidden_state, prv_stateList[qwerky_idx], v_first, position_embeddings)
                 ret_stateList[qwerky_idx] = ret_subList
             else:
                 # Chunk processing
@@ -476,7 +473,9 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
                         layer, 
                         x_hidden_state[:, start:endin], 
                         ret_subList, 
-                        v_first[:, start:endin] if v_first is not None else None
+                        v_first[:, start:endin] if v_first is not None else None,
+                        # Position embedding is a tuple pair of tensors, chunk it (tensor[B,T,C], tensor[B,T,C])
+                        position_embeddings=(position_embeddings[0][:, start:endin], position_embeddings[1][:, start:endin])
                     )
 
                     new_x_hidden_state_arr[chunk_idx] = new_x_hidden_state

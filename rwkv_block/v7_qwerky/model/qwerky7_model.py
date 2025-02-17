@@ -43,9 +43,8 @@ class Qwerky7Model(nn.Module):
         with torch.device(device):
             # Embedding layer
             self.embed_tokens = nn.Embedding(vocab_size, hidden_size, padding_idx, dtype=dtype)
-            # Initialize rotary embeddings if we have any hybrid layers
-            if config.num_hybrid_layers() > 0:
-                self.hybrid_rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
+            # Initialize rotary embeddings, which is used for all layers (both rwkv and qwerky)
+            self.rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
 
             # main layers
             self.layers = nn.ModuleList([
@@ -239,9 +238,8 @@ class Qwerky7Model(nn.Module):
         forward_chunk_size = self.configMap.forward_chunk_size
         forward_chunk_count = math.ceil( x_input_length / forward_chunk_size )
 
-        # Hybrid layer rotary embeddings
-        if self.configMap.num_hybrid_layers() > 0:
-            position_embeddings = self.hybrid_rotary_emb(x_hidden_state, position_ids)
+        # Apply rotary embeddings to all layers
+        position_embeddings = self.rotary_emb(x_hidden_state, position_ids)
 
         # Process prefix hybrid layers if any
         if self.configMap.num_prefix_hybrid_layers > 0:
@@ -266,7 +264,10 @@ class Qwerky7Model(nn.Module):
             
             # Single pass, optimized
             if forward_chunk_count <= 1:
-                x_hidden_state, last_layer_state, v_first = self._forward_qwerky_layer_hook(layer, x_hidden_state, prv_stateList[qwerky_idx], v_first)
+                x_hidden_state, last_layer_state, v_first = self._forward_qwerky_layer_hook(
+                    layer, x_hidden_state, prv_stateList[qwerky_idx], v_first, 
+                    position_embeddings=position_embeddings
+                )
             else:
                 # Sadly, we need to chunk
                 new_x_hidden_state_arr = [None]*forward_chunk_count
@@ -282,7 +283,9 @@ class Qwerky7Model(nn.Module):
                         layer, 
                         x_hidden_state[:,start:endin], 
                         last_layer_state, 
-                        v_first[:, start:endin] if v_first is not None else None
+                        v_first[:, start:endin] if v_first is not None else None,
+                        # Position embedding is a tuple pair of tensors, chunk it (tensor[B,T,C], tensor[B,T,C])
+                        position_embeddings=(position_embeddings[0][:, start:endin], position_embeddings[1][:, start:endin])
                     )
 
                     # Save the chunk
@@ -326,14 +329,15 @@ class Qwerky7Model(nn.Module):
             layer:Qwerky7LayerBlock, 
             x_hidden_state:torch.Tensor, 
             prv_stateList:list[torch.Tensor], 
-            v_first:torch.Tensor
+            v_first:torch.Tensor,
+            position_embeddings:torch.Tensor = None
     ) -> tuple[torch.Tensor,torch.Tensor,torch.Tensor]:
         '''
         Forward layer hook operation, that is easily overridable.
         To implement gradient checkpointing for use in various trainers
         '''
         x_hidden_state = x_hidden_state.to(layer.input_layernorm.weight.device, non_blocking=True)
-        return layer(x_hidden_state, prv_stateList, v_first)
+        return layer(x_hidden_state, prv_stateList, v_first, position_embeddings=position_embeddings)
     
     def _forward_internal(
         self, idx:torch.Tensor, 
