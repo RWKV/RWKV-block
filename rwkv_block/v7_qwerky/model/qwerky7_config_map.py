@@ -154,23 +154,24 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
             kwargs['init_state_wkv'] = True
 
         # Initialize the config map, with the configured values
-        return Qwerky7ConfigMap(
-            num_hidden_layers=num_hidden_layers,
-            hidden_size=state_dict['model.embed_tokens.weight'].shape[1],
-            vocab_size=state_dict['model.embed_tokens.weight'].shape[0],
+        return Qwerky7ConfigMap(**{
+            **{
+                "num_hidden_layers": num_hidden_layers,
+                "hidden_size": state_dict['model.embed_tokens.weight'].shape[1],
+                "vocab_size":  state_dict['model.embed_tokens.weight'].shape[0],
 
-            head_size = state_dict[f'model.layers.{num_prefix_hybrid_layers}.self_attn.r_k'].shape[1],
+                "head_size":   state_dict[f'model.layers.{num_prefix_hybrid_layers}.self_attn.r_k'].shape[1],
 
-            hidden_size_att=state_dict[f'model.layers.{num_prefix_hybrid_layers}.self_attn.k_proj.weight'].shape[0],
-            hidden_size_ffn=state_dict[f'model.layers.{num_prefix_hybrid_layers}.mlp.up_proj.weight'].shape[0],
+                "hidden_size_att": state_dict[f'model.layers.{num_prefix_hybrid_layers}.self_attn.k_proj.weight'].shape[0],
+                "hidden_size_ffn": state_dict[f'model.layers.{num_prefix_hybrid_layers}.mlp.up_proj.weight'].shape[0],
 
-            v_first_embedding = f'model.layers.{num_prefix_hybrid_layers}.self_attn.v0' in state_dict,
+                "v_first_embedding": f'model.layers.{num_prefix_hybrid_layers}.self_attn.v0' in state_dict,
 
-            num_suffix_hybrid_layers = num_suffix_hybrid_layers,
-            num_prefix_hybrid_layers = num_prefix_hybrid_layers,
-
+                "num_suffix_hybrid_layers": num_suffix_hybrid_layers,
+                "num_prefix_hybrid_layers": num_prefix_hybrid_layers,
+            },
             **kwargs
-        )
+        })
 
     def num_qwerky_layers(self) -> int:
         """

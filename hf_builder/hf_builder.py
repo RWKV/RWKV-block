@@ -343,14 +343,17 @@ def hf_builder(args):
     print("Loading model state into class ...")
 
     # Removing known state dict key with issues
-    # rmv_state_keys = [
-    #     "model.layers.0.self_attn.v0",
-    #     "model.layers.0.self_attn.v1",
-    #     "model.layers.0.self_attn.v2"
-    # ]
-    # for key in rmv_state_keys:
-    #     if key in state_dict:
-    #         del state_dict[key]
+    if "v_first_embedding" in model_config and model_config["v_first_embedding"] is True:
+        pass
+    else:
+        rmv_state_keys = [
+            "model.layers.0.self_attn.v0",
+            "model.layers.0.self_attn.v1",
+            "model.layers.0.self_attn.v2"
+        ]
+        for key in rmv_state_keys:
+            if key in state_dict:
+                del state_dict[key]
 
     model_instance.load_state_dict(state_dict)
 
