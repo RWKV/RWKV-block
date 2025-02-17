@@ -87,30 +87,32 @@ class Qwerky7Model(nn.Module):
         hidden_size = configMap.hidden_size
         head_size = configMap.head_size
         
-        # Iterate and reset the layers
-        for i in range(num_hidden_layers):
-            if hasattr(self.layers[i], 'reset_parameters'):
-                self.layers[i].reset_parameters()
+        # With device
+        with torch.device(device):
+            # Iterate and reset the layers
+            for i in range(num_hidden_layers):
+                if hasattr(self.layers[i], 'reset_parameters'):
+                    self.layers[i].reset_parameters()
 
-        # Reinit the Embedding layer
-        self.embed_tokens.reset_parameters()
+            # Reinit the Embedding layer
+            self.embed_tokens.reset_parameters()
 
-        # Reinit the RMSNorm
-        self.norm.weight.data.fill_(1.0)
+            # Reinit the RMSNorm
+            self.norm.weight.data.fill_(1.0)
 
-        # Reinit the init state tuning support (only for Qwerky layers)
-        if configMap.init_state_wkv:
-            n_qwerky_layers = configMap.num_qwerky_layers()
-            if self.init_state is None:
-                stateTuneList = [None]*n_qwerky_layers
-                for i in range(n_qwerky_layers):
-                    stateTuneList[i] = nn.ParameterDict({
-                        "wkv": nn.Parameter(torch.zeros(hidden_size // head_size, head_size, head_size, device=device, dtype=torch.float)),
-                    })
-                self.init_state = nn.ParameterList(stateTuneList)
-            else:
-                for i in range(n_qwerky_layers):
-                    self.init_state[i]["wkv"].data.copy_(torch.zeros(hidden_size // head_size, head_size, head_size, device=device, dtype=torch.float))
+            # Reinit the init state tuning support (only for Qwerky layers)
+            if configMap.init_state_wkv:
+                n_qwerky_layers = configMap.num_qwerky_layers()
+                if self.init_state is None:
+                    stateTuneList = [None]*n_qwerky_layers
+                    for i in range(n_qwerky_layers):
+                        stateTuneList[i] = nn.ParameterDict({
+                            "wkv": nn.Parameter(torch.zeros(hidden_size // head_size, head_size, head_size, dtype=torch.float)),
+                        })
+                    self.init_state = nn.ParameterList(stateTuneList)
+                else:
+                    for i in range(n_qwerky_layers):
+                        self.init_state[i]["wkv"].data.copy_(torch.zeros(hidden_size // head_size, head_size, head_size, dtype=torch.float))
 
 
     def load_from_model_state_dict(self, state_dict: dict, non_blocking:bool=True):

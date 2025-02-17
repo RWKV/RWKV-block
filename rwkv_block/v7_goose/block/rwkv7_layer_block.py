@@ -29,26 +29,27 @@ class RWKV7LayerBlock(torch.nn.Module):
         layer_id = configMap.get_layer_id(-1)
         assert layer_id >= 0, f'layer_id must be >= 0, got {layer_id}'
 
-        # Setup the layernorms, and mixes
-        self.ln1 = nn.LayerNorm(hidden_size, device=device, dtype=dtype)
-        self.ln2 = nn.LayerNorm(hidden_size, device=device, dtype=dtype)
+        with torch.device(device):
+            # Setup the layernorms, and mixes
+            self.ln1 = nn.LayerNorm(hidden_size, dtype=dtype)
+            self.ln2 = nn.LayerNorm(hidden_size, dtype=dtype)
 
-        if layer_id == 0:
-            self.ln0 = nn.LayerNorm(hidden_size, device=device, dtype=dtype)
-        else:
-            self.ln0 = nn.Identity(device=device)
+            if layer_id == 0:
+                self.ln0 = nn.LayerNorm(hidden_size, dtype=dtype)
+            else:
+                self.ln0 = nn.Identity()
 
-        self.att = RWKV7TimeMix(configMap)
-        self.ffn = RWKV7ChannelMix(configMap)
+            self.att = RWKV7TimeMix(configMap)
+            self.ffn = RWKV7ChannelMix(configMap)
 
-        # Setup droupout at block level
-        if dropout_rate > 0.0:            
-            self.drop0 = nn.Dropout(p = dropout_rate,device=device)
-            self.drop1 = nn.Dropout(p = dropout_rate,device=device)
-        else:
-            self.drop0 = nn.Identity(device=device)
-            self.drop1 = nn.Identity(device=device)
-    
+            # Setup droupout at block level
+            if dropout_rate > 0.0:            
+                self.drop0 = nn.Dropout(p = dropout_rate)
+                self.drop1 = nn.Dropout(p = dropout_rate)
+            else:
+                self.drop0 = nn.Identity()
+                self.drop1 = nn.Identity()
+        
     def reset_parameters(self):
         '''
         Reset the parameters of the block, to an initial state used for training a model from scratch
@@ -70,9 +71,9 @@ class RWKV7LayerBlock(torch.nn.Module):
         self.ln2.reset_parameters()
 
         # if layer_id == 0:
-        #     self.ln0 = nn.LayerNorm(hidden_size, device=device, dtype=dtype)
+        #     self.ln0 = nn.LayerNorm(hidden_size, dtype=dtype)
         # else:
-        #     self.ln0 = nn.Identity(device=device)
+        #     self.ln0 = nn.Identity()
         self.ln0.reset_parameters()
 
         # Call the sub blocks reset_parameters

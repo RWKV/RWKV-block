@@ -32,9 +32,10 @@ class RWKV7ChannelMix(torch.nn.Module):
         
         # Build the various params
         # ---
-        self.x_k = nn.Parameter(torch.empty(1, 1, hidden_size, device=device, dtype=dtype))
-        self.key = nn.Linear(hidden_size, hidden_size_ffn, bias=False, device=device, dtype=dtype)
-        self.value = nn.Linear(hidden_size_ffn, hidden_size, bias=False, device=device, dtype=dtype)
+        with torch.device(device):
+            self.x_k = nn.Parameter(torch.empty(1, 1, hidden_size, dtype=dtype))
+            self.key = nn.Linear(hidden_size, hidden_size_ffn, bias=False, dtype=dtype)
+            self.value = nn.Linear(hidden_size_ffn, hidden_size, bias=False, dtype=dtype)
 
     def reset_parameters(self):
         '''

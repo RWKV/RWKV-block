@@ -15,7 +15,8 @@ class Qwerky7CausalLM(nn.Module):
 
         device = self.config.get_device(None)
         dtype = self.config.get_dtype('bfloat16')
-        self.lm_head = nn.Linear(self.config.hidden_size, self.config.vocab_size, bias=False).to(device, dtype=dtype)
+        with torch.device(device):
+            self.lm_head = nn.Linear(self.config.hidden_size, self.config.vocab_size, bias=False).to(dtype=dtype)
 
     def reset_parameters(self):
         '''

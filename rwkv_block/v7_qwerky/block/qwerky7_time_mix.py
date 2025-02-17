@@ -132,7 +132,7 @@ class Qwerky7TimeMix(torch.nn.Module):
 
         # Reset the various params
         # ---
-        with torch.no_grad():
+        with torch.device(device), torch.no_grad():
             ratio_0_to_1 = layer_id / (num_hidden_layers - 1)  # 0 to 1
             ratio_1_to_almost0 = 1.0 - (layer_id / num_hidden_layers)  # 1 to ~0
             ddd = torch.ones(1, 1, hidden_size, device=device, dtype=dtype)

@@ -50,8 +50,8 @@ class Qwerky7LayerBlock(torch.nn.Module):
             # Setup droupout at block level
             dropout_rate = configMap.dropout_rate
             if dropout_rate > 0.0:            
-                self.drop0 = nn.Dropout(p = dropout_rate,device=device)
-                self.drop1 = nn.Dropout(p = dropout_rate,device=device)
+                self.drop0 = nn.Dropout(p = dropout_rate)
+                self.drop1 = nn.Dropout(p = dropout_rate)
             else:
                 self.drop0 = nn.Identity(device=device)
                 self.drop1 = nn.Identity(device=device)
