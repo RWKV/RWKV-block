@@ -314,14 +314,15 @@ def hf_builder(args):
     
     # Load the model class instance
     print("Loading model class instance ...")
-    if model_class == "v7_goose":
-        from hf_code.v7_goose.modeling_rwkv7 import RWKV7Model
-        model_instance = RWKV7Model(model_config)
-    elif model_class == "v7_qwerky":
-        from hf_code.v7_qwerky.modeling_qwerky7 import Qwerky7ForCausalLM
-        model_instance = Qwerky7ForCausalLM(model_config)
-    else:
-        raise ValueError(f"Unsupported model class: {model_class}")
+    with torch.device("meta"):
+        if model_class == "v7_goose":
+            from hf_code.v7_goose.modeling_rwkv7 import RWKV7Model
+            model_instance = RWKV7Model(model_config)
+        elif model_class == "v7_qwerky":
+            from hf_code.v7_qwerky.modeling_qwerky7 import Qwerky7ForCausalLM
+            model_instance = Qwerky7ForCausalLM(model_config)
+        else:
+            raise ValueError(f"Unsupported model class: {model_class}")
 
     # Deduce the tokenizer
     tokenizer_type = args.tokenizer_type
@@ -355,11 +356,8 @@ def hf_builder(args):
             if key in state_dict:
                 del state_dict[key]
 
-    model_instance.load_state_dict(state_dict)
+    # model_instance.load_state_dict(state_dict)
 
-    # print("-----------------------------")
-    # print("Model Configuration:")
-    # print(model_instance.config)
     print("-----------------------------")
 
     print("Saving tokenizer files ...")
@@ -370,7 +368,7 @@ def hf_builder(args):
     save_model_code_to_output_dir(args.output_dir, model_class)
     
     print("Saving model weight files ...")
-    model_instance.save_pretrained(args.output_dir)
+    model_instance.save_pretrained(args.output_dir, state_dict=state_dict)
     model_config.save_pretrained(args.output_dir)
 
     print("Patching configuration ...")
