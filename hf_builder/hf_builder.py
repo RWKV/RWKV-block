@@ -25,6 +25,8 @@ from pathlib import Path
 import torch
 from safetensors.torch import load_file, save_file
 import hjson
+from huggingface_hub import split_torch_state_dict_into_shards
+from safetensors.torch import save_file as safe_save_file
 
 ####
 # System path configuration
@@ -313,16 +315,19 @@ def hf_builder(args):
     print("-----------------------------")
     
     # Load the model class instance
-    print("Loading model class instance ...")
-    with torch.device("meta"):
-        if model_class == "v7_goose":
-            from hf_code.v7_goose.modeling_rwkv7 import RWKV7Model
-            model_instance = RWKV7Model(model_config)
-        elif model_class == "v7_qwerky":
-            from hf_code.v7_qwerky.modeling_qwerky7 import Qwerky7ForCausalLM
-            model_instance = Qwerky7ForCausalLM(model_config)
-        else:
-            raise ValueError(f"Unsupported model class: {model_class}")
+    # print("Loading model class instance ...")
+    # with torch.device("meta"):
+    #     if model_class == "v7_goose":
+    #         from hf_code.v7_goose.modeling_rwkv7 import RWKV7Model
+    #         model_instance = RWKV7Model(model_config)
+    #     elif model_class == "v7_qwerky":
+    #         from hf_code.v7_qwerky.modeling_qwerky7 import Qwerky7ForCausalLM
+    #         model_instance = Qwerky7ForCausalLM(model_config)
+    #     else:
+    #         raise ValueError(f"Unsupported model class: {model_class}")
+
+    # Load the model files
+    print("Checking tokenizer ...")
 
     # Deduce the tokenizer
     tokenizer_type = args.tokenizer_type
@@ -341,10 +346,10 @@ def hf_builder(args):
         print(f"Detected Tokenizer Type: {tokenizer_type}")
 
     # Load the model files
-    print("Loading model state into class ...")
+    print("Modifying model state ...")
 
     # Removing known state dict key with issues
-    if "v_first_embedding" in model_config and model_config["v_first_embedding"] is True:
+    if hasattr(model_config, "v_first_embedding") and model_config.v_first_embedding is True:
         pass
     else:
         rmv_state_keys = [
@@ -368,7 +373,59 @@ def hf_builder(args):
     save_model_code_to_output_dir(args.output_dir, model_class)
     
     print("Saving model weight files ...")
-    model_instance.save_pretrained(args.output_dir, state_dict=state_dict)
+
+    # model_instance.save_pretrained(args.output_dir, state_dict=state_dict)
+    # --
+
+    #
+    #  The following logic was modified from HF
+    #  https://github.com/huggingface/transformers/blob/b673c16cad81c71f70903a9a63f5b5f06014aa9e/src/transformers/modeling_utils.py#L2917
+    #
+    max_shard_size="5GB"
+    state_dict_split = split_torch_state_dict_into_shards(
+        state_dict, filename_pattern="model{suffix}.safetensors", max_shard_size=max_shard_size
+    )
+
+    # Save index if sharded
+    index = None
+    if state_dict_split.is_sharded:
+        index = {
+            "metadata": state_dict_split.metadata,
+            "weight_map": state_dict_split.tensor_to_filename,
+        }
+
+    # Save the model
+    filename_to_tensors = state_dict_split.filename_to_tensors.items()
+    for shard_file, tensors in filename_to_tensors:
+        shard = {}
+        for tensor in tensors:
+            shard[tensor] = state_dict[tensor].contiguous()
+            # delete reference, see https://github.com/huggingface/transformers/pull/34890
+            del state_dict[tensor]
+
+        # At some point we will need to deal better with save_function (used for TPU and other distributed
+        # joyfulness), but for now this enough.
+        print("- ", shard_file)
+        safe_save_file(shard, os.path.join(args.output_dir, shard_file), metadata={"format": "pt"})
+
+    del state_dict
+
+    if index is None:
+        path_to_weights = os.path.join(args.output_dir, "model.safetensors")
+        print(f"Model weights saved in {path_to_weights}")
+    else:
+        save_index_file = os.path.join(args.output_dir, "model.safetensors.index.json")
+        # Save the index as well
+        with open(save_index_file, "w", encoding="utf-8") as f:
+            content = json.dumps(index, indent=2, sort_keys=True) + "\n"
+            f.write(content)
+        print(
+            f"The model is bigger than the maximum size per checkpoint ({max_shard_size}) and is going to be "
+            f"split in {len(state_dict_split.filename_to_tensors)} checkpoint shards. You can find where each parameters has been saved in the "
+            f"index located at {save_index_file}."
+        )
+
+    print("Saving model config files ...")
     model_config.save_pretrained(args.output_dir)
 
     print("Patching configuration ...")
