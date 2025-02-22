@@ -25,6 +25,9 @@ class Qwerky7Config(PretrainedConfig):
             Number of hidden layers in the model.
         hidden_size (`int`, *optional*, defaults to 768):
             Dimensionality of the embeddings and hidden states.
+        pipeline_parallel_devices (`List[str]`, *optional*):
+            List of devices for pipeline parallel execution. Each device string should be in the format "cuda:N".
+            When provided, the model layers will be distributed across these devices.
         
         hidden_size_att (`int`, *optional*):
             Dimensionality of the attention hidden states. Will be computed from `hidden_size` if unset.
@@ -127,6 +130,7 @@ class Qwerky7Config(PretrainedConfig):
         eos_token_id=0,
         tie_word_embeddings=False,
         use_bfloat16=True,
+        pipeline_parallel_devices=None,
         ########################################
         **kwargs,
     ):
@@ -149,6 +153,7 @@ class Qwerky7Config(PretrainedConfig):
 
         self.dropout_rate = dropout_rate
         self.use_cache = use_cache
+        self.pipeline_parallel_devices = pipeline_parallel_devices
 
         # Hybrid model configuration
         self.num_prefix_hybrid_layers = num_prefix_hybrid_layers
