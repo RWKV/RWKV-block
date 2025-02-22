@@ -265,13 +265,16 @@ def hf_builder(args):
     print("-----------------------------")
     print("Converting RWKV model to HuggingFace format...")
     print(f"Model Class     : {args.model_class}")
-    print(f"Model Source    : {args.model_source}")
-    print(f"Tokenizer Type  : {args.tokenizer_type}")
+    if not args.model_code_only:
+        print(f"Model Source    : {args.model_source}")
+        print(f"Tokenizer Type  : {args.tokenizer_type}")
     print(f"Output Directory: {args.output_dir}")
     if args.hf_config:
         print(f"HF Config      : {args.hf_config}")
     if args.one_file_safetensor:
         print("Using single safetensor file mode")
+    if args.model_code_only:
+        print("Model code only mode - skipping tokenizer and weights")
     print("-----------------------------")
 
     # Get the model class
@@ -285,6 +288,20 @@ def hf_builder(args):
         build_v7_qwerky()
     else:
         raise ValueError(f"Unsupported model class: {model_class}")
+
+    # Create output directory
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # Save model code files
+    print("Saving model code files ...")
+    save_model_code_to_output_dir(args.output_dir, model_class)
+
+    # If model-code-only mode, we're done here
+    if args.model_code_only:
+        print("-----------------------------")
+        print("Successfully copied model code files")
+        print("-----------------------------")
+        return
 
     # Load model weights
     print("Loading model weights raw state ...")
@@ -354,11 +371,7 @@ def hf_builder(args):
     print("-----------------------------")
 
     print("Saving tokenizer files ...")
-    os.makedirs(args.output_dir, exist_ok=True)
     save_tokenizer_to_output_dir(args.output_dir, tokenizer_type)
-
-    print("Saving model code files ...")
-    save_model_code_to_output_dir(args.output_dir, model_class)
     
     print("Saving model weight files ...")
 
@@ -448,13 +461,19 @@ def hf_builder(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Convert RWKV models to HuggingFace format")
-    parser.add_argument("model_source", help="Path to RWKV model file in .pth or .safetensors format")
+    parser.add_argument("model_source", help="Path to RWKV model file in .pth or .safetensors format", nargs='?')
     parser.add_argument("output_dir", help="Directory to output the converted HuggingFace model")
     parser.add_argument("--model_class", default="v7_goose", help="Model class (default: v7_goose)")
     parser.add_argument("--tokenizer_type", default="auto", help="Tokenizer to use, either 'auto','world','neox' or 'qwen2' (default: auto)")
     parser.add_argument("--hf-config", help="HuggingFace config overrides as JSON string or path to JSON file")
     parser.add_argument("--one-file-safetensor", action="store_true", help="Save model weights in a single safetensor file instead of sharding")
+    parser.add_argument("--model-code-only", action="store_true", help="Only copy model code files, skip tokenizer and weights")
     args = parser.parse_args()
+
+    # Validate args
+    if not args.model_code_only and args.model_source is None:
+        parser.error("model_source is required unless --model-code-only is specified")
+
     hf_builder(args)
 
 if __name__ == "__main__":
