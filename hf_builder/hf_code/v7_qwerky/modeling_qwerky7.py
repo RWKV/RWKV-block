@@ -304,6 +304,31 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
 
         # Add rotary embeddings for all layers
         self.rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
+
+        # Setup pipeline parallel devices if specified
+        self.pipeline_parallel_devices = getattr(config, 'pipeline_parallel_devices', None)
+        if self.pipeline_parallel_devices:
+            # Validate devices
+            for device in self.pipeline_parallel_devices:
+                if not isinstance(device, str):
+                    raise ValueError(f"Pipeline parallel device must be string, got {type(device)}")
+            
+            num_devices = len(self.pipeline_parallel_devices)
+            # Count total layers including embeddings and final norm
+            total_layers = len(self.layers) + 2  # +2 for embeddings and final norm
+            layers_per_device = math.ceil(total_layers / num_devices)
+            
+            # Move embeddings to first device
+            self.embed_tokens = self.embed_tokens.to(self.pipeline_parallel_devices[0])
+            
+            # Move main layers
+            for i in range(len(self.layers)):
+                device_idx = (i + 1) // layers_per_device  # +1 because embeddings is first layer
+                device_idx = min(device_idx, num_devices - 1)  # Ensure we don't exceed device count
+                self.layers[i] = self.layers[i].to(self.pipeline_parallel_devices[device_idx])
+            
+            # Move final norm to last device
+            self.norm = self.norm.to(self.pipeline_parallel_devices[-1])
     
     def get_input_embeddings(self):
         return self.emb
@@ -452,6 +477,19 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
         for i in range(qwerky_start, qwerky_end):
             layer = self.layers[i]
             
+            # Move tensors to layer's device
+            if self.pipeline_parallel_devices:
+                layer_device = layer.input_layernorm.weight.device
+                x_hidden_state = x_hidden_state.to(layer_device, non_blocking=True)
+                if v_first is not None:
+                    v_first = v_first.to(layer_device, non_blocking=True)
+                if isinstance(position_embeddings, tuple):
+                    position_embeddings = (position_embeddings[0].to(layer_device, non_blocking=True),
+                                        position_embeddings[1].to(layer_device, non_blocking=True))
+            
+            if self.pipeline_parallel_devices and prv_stateList[qwerky_idx] not None:
+                prv_stateList[qwerky_idx] = prv_stateList[qwerky_idx].to(layer_device, non_blocking=True)
+
             # Single pass, optimized
             if forward_chunk_count <= 1:
                 qwerky_idx = i - qwerky_start
@@ -463,7 +501,7 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
                 v_first_arr = [None]*forward_chunk_count if v_first is None else None
                 qwerky_idx = i - qwerky_start
                 ret_subList = prv_stateList[qwerky_idx]
-
+                
                 # Forward in chunks
                 for chunk_idx in range(forward_chunk_count):
                     start = chunk_idx * forward_chunk_size
@@ -544,7 +582,7 @@ class Qwerky7ForCausalLM(Qwerky7PreTrainedModel, GenerationMixin):
         self.model = Qwerky7BaseModel(config)
 
         dtype=self.model.embed_tokens.weight.dtype
-        device=self.model.embed_tokens.weight.device
+        device=self.model.norm.weight.device
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False, dtype=dtype, device=device)
 
         self.post_init()
