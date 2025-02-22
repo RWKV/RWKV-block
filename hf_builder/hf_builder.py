@@ -270,6 +270,8 @@ def hf_builder(args):
     print(f"Output Directory: {args.output_dir}")
     if args.hf_config:
         print(f"HF Config      : {args.hf_config}")
+    if args.one_file_safetensor:
+        print("Using single safetensor file mode")
     print("-----------------------------")
 
     # Get the model class
@@ -314,18 +316,6 @@ def hf_builder(args):
     print(model_config.__dict__)
     print("-----------------------------")
     
-    # Load the model class instance
-    # print("Loading model class instance ...")
-    # with torch.device("meta"):
-    #     if model_class == "v7_goose":
-    #         from hf_code.v7_goose.modeling_rwkv7 import RWKV7Model
-    #         model_instance = RWKV7Model(model_config)
-    #     elif model_class == "v7_qwerky":
-    #         from hf_code.v7_qwerky.modeling_qwerky7 import Qwerky7ForCausalLM
-    #         model_instance = Qwerky7ForCausalLM(model_config)
-    #     else:
-    #         raise ValueError(f"Unsupported model class: {model_class}")
-
     # Load the model files
     print("Checking tokenizer ...")
 
@@ -361,8 +351,6 @@ def hf_builder(args):
             if key in state_dict:
                 del state_dict[key]
 
-    # model_instance.load_state_dict(state_dict)
-
     print("-----------------------------")
 
     print("Saving tokenizer files ...")
@@ -374,56 +362,52 @@ def hf_builder(args):
     
     print("Saving model weight files ...")
 
-    # model_instance.save_pretrained(args.output_dir, state_dict=state_dict)
-    # --
-
-    #
-    #  The following logic was modified from HF
-    #  https://github.com/huggingface/transformers/blob/b673c16cad81c71f70903a9a63f5b5f06014aa9e/src/transformers/modeling_utils.py#L2917
-    #
-    max_shard_size="5GB"
-    state_dict_split = split_torch_state_dict_into_shards(
-        state_dict, filename_pattern="model{suffix}.safetensors", max_shard_size=max_shard_size
-    )
-
-    # Save index if sharded
-    index = None
-    if state_dict_split.is_sharded:
-        index = {
-            "metadata": state_dict_split.metadata,
-            "weight_map": state_dict_split.tensor_to_filename,
-        }
-
-    # Save the model
-    filename_to_tensors = state_dict_split.filename_to_tensors.items()
-    for shard_file, tensors in filename_to_tensors:
-        shard = {}
-        for tensor in tensors:
-            shard[tensor] = state_dict[tensor].contiguous()
-            # delete reference, see https://github.com/huggingface/transformers/pull/34890
-            del state_dict[tensor]
-
-        # At some point we will need to deal better with save_function (used for TPU and other distributed
-        # joyfulness), but for now this enough.
-        print("- ", shard_file)
-        safe_save_file(shard, os.path.join(args.output_dir, shard_file), metadata={"format": "pt"})
-
-    del state_dict
-
-    if index is None:
+    if args.one_file_safetensor:
+        # Save all weights in a single safetensor file
+        print("Saving all weights in a single safetensor file...")
         path_to_weights = os.path.join(args.output_dir, "model.safetensors")
+        safe_save_file(state_dict, path_to_weights, metadata={"format": "pt"})
         print(f"Model weights saved in {path_to_weights}")
     else:
-        save_index_file = os.path.join(args.output_dir, "model.safetensors.index.json")
-        # Save the index as well
-        with open(save_index_file, "w", encoding="utf-8") as f:
-            content = json.dumps(index, indent=2, sort_keys=True) + "\n"
-            f.write(content)
-        print(
-            f"The model is bigger than the maximum size per checkpoint ({max_shard_size}) and is going to be "
-            f"split in {len(state_dict_split.filename_to_tensors)} checkpoint shards. You can find where each parameters has been saved in the "
-            f"index located at {save_index_file}."
+        # Use sharding for large models
+        max_shard_size="5GB"
+        state_dict_split = split_torch_state_dict_into_shards(
+            state_dict, filename_pattern="model{suffix}.safetensors", max_shard_size=max_shard_size
         )
+
+        # Save index if sharded
+        index = None
+        if state_dict_split.is_sharded:
+            index = {
+                "metadata": state_dict_split.metadata,
+                "weight_map": state_dict_split.tensor_to_filename,
+            }
+
+        # Save the model
+        filename_to_tensors = state_dict_split.filename_to_tensors.items()
+        for shard_file, tensors in filename_to_tensors:
+            shard = {}
+            for tensor in tensors:
+                shard[tensor] = state_dict[tensor].contiguous()
+                # delete reference, see https://github.com/huggingface/transformers/pull/34890
+                del state_dict[tensor]
+
+            print("- ", shard_file)
+            safe_save_file(shard, os.path.join(args.output_dir, shard_file), metadata={"format": "pt"})
+
+        if index is not None:
+            save_index_file = os.path.join(args.output_dir, "model.safetensors.index.json")
+            # Save the index as well
+            with open(save_index_file, "w", encoding="utf-8") as f:
+                content = json.dumps(index, indent=2, sort_keys=True) + "\n"
+                f.write(content)
+            print(
+                f"The model is bigger than the maximum size per checkpoint ({max_shard_size}) and is going to be "
+                f"split in {len(state_dict_split.filename_to_tensors)} checkpoint shards. You can find where each parameters has been saved in the "
+                f"index located at {save_index_file}."
+            )
+
+    del state_dict
 
     print("Saving model config files ...")
     model_config.save_pretrained(args.output_dir)
@@ -469,6 +453,7 @@ def main():
     parser.add_argument("--model_class", default="v7_goose", help="Model class (default: v7_goose)")
     parser.add_argument("--tokenizer_type", default="auto", help="Tokenizer to use, either 'auto','world','neox' or 'qwen2' (default: auto)")
     parser.add_argument("--hf-config", help="HuggingFace config overrides as JSON string or path to JSON file")
+    parser.add_argument("--one-file-safetensor", action="store_true", help="Save model weights in a single safetensor file instead of sharding")
     args = parser.parse_args()
     hf_builder(args)
 
