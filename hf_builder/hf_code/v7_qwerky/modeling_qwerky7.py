@@ -487,12 +487,12 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
                     position_embeddings = (position_embeddings[0].to(layer_device, non_blocking=True),
                                         position_embeddings[1].to(layer_device, non_blocking=True))
             
-            if self.pipeline_parallel_devices and prv_stateList[qwerky_idx] not None:
+            qwerky_idx = i - qwerky_start
+            if self.pipeline_parallel_devices and prv_stateList[qwerky_idx] is not None:
                 prv_stateList[qwerky_idx] = prv_stateList[qwerky_idx].to(layer_device, non_blocking=True)
 
-            # Single pass, optimized
+            # Single pass, optimized  
             if forward_chunk_count <= 1:
-                qwerky_idx = i - qwerky_start
                 x_hidden_state, ret_subList, v_first = qwerky_layer_forward(layer, x_hidden_state, prv_stateList[qwerky_idx], v_first, position_embeddings)
                 ret_stateList[qwerky_idx] = ret_subList
             else:
