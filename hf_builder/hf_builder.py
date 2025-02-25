@@ -356,7 +356,7 @@ def hf_builder(args):
     print("Modifying model state ...")
 
     # Removing known state dict key with issues
-    if hasattr(model_config, "v_first_embedding") and model_config.v_first_embedding is True:
+    if hasattr(model_config, "v_first_with_embedding") and model_config.v_first_with_embedding is True:
         pass
     else:
         rmv_state_keys = [

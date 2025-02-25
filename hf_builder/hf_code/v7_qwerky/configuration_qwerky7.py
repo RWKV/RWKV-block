@@ -111,7 +111,7 @@ class Qwerky7Config(PretrainedConfig):
         # Internal forward chunk size
         forward_chunk_size=4096,
         # V First embedding support
-        v_first_embedding=False,
+        v_first_with_embedding=False,
         ########################################
         # Hybrid model configuration
         ########################################
@@ -143,12 +143,12 @@ class Qwerky7Config(PretrainedConfig):
         self.hidden_size = hidden_size
         self.hidden_size_att = hidden_size_att
         self.hidden_size_ffn = hidden_size_ffn
-        self.v_first_embedding = v_first_embedding
+        self.v_first_with_embedding = v_first_with_embedding
 
         self.head_size = head_size
         self.tmix_backend = tmix_backend
         self.init_state_wkv = init_state_wkv
-        self.v_first_embedding = v_first_embedding
+        self.v_first_with_embedding = v_first_with_embedding
         self.forward_chunk_size = forward_chunk_size
 
         self.dropout_rate = dropout_rate

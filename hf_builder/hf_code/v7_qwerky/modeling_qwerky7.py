@@ -430,8 +430,8 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
         # Initialize the v_first
         v_first = None
 
-        # Uses the input hidden state, as the v_first if v_first_embedding is enabled
-        if self.config.v_first_embedding:
+        # Uses the input hidden state, as the v_first if v_first_with_embedding is enabled
+        if self.config.v_first_with_embedding:
             v_first = x_hidden_state.clone()
 
         # Get the forward chunk size, and the chunk count

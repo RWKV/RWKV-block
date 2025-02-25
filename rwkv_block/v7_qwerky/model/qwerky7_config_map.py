@@ -165,7 +165,7 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
                 "hidden_size_att": state_dict[f'model.layers.{num_prefix_hybrid_layers}.self_attn.k_proj.weight'].shape[0],
                 "hidden_size_ffn": state_dict[f'model.layers.{num_prefix_hybrid_layers}.mlp.up_proj.weight'].shape[0],
 
-                "v_first_embedding": f'model.layers.{num_prefix_hybrid_layers}.self_attn.v0' in state_dict,
+                "v_first_with_embedding": f'model.layers.{num_prefix_hybrid_layers}.self_attn.v0' in state_dict,
 
                 "num_suffix_hybrid_layers": num_suffix_hybrid_layers,
                 "num_prefix_hybrid_layers": num_prefix_hybrid_layers,
