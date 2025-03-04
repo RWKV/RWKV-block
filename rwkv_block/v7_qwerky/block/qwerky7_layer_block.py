@@ -12,10 +12,11 @@ from transformers.models.qwen2.modeling_qwen2 import Qwen2RMSNorm, Qwen2MLP
 from dataclasses import dataclass
 
 from deepspeed.runtime.zero.linear import zero3_linear_wrap
-def bf16_linear(input, weight):
+def bf16_linear(input, weight, bias=None):
     input = input.bfloat16()
     weight = weight.bfloat16()
-    return zero3_linear_wrap(input, weight).bfloat16()
+    bias = bias.bfloat16() if bias is not None else None
+    return zero3_linear_wrap(input, weight, bias).bfloat16()
 
 @dataclass
 class Qwerky7Qwen2MLPConfig:
