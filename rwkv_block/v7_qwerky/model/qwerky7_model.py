@@ -231,6 +231,9 @@ class Qwerky7Model(nn.Module):
         # Initialize the v_first
         v_first = None
 
+        # Normalize x_hidden_state to bfloat16
+        x_hidden_state = x_hidden_state.to(torch.bfloat16)
+
         # Uses the input hidden state, as the v_first if v_first_with_embedding is enabled
         if self.configMap.v_first_with_embedding:
             v_first = x_hidden_state.clone()
@@ -365,7 +368,7 @@ class Qwerky7Model(nn.Module):
         # Lets get the embedding
         if self.embed_tokens is not None:
             idx = idx.to(self.embed_tokens.weight.device, non_blocking=True)
-            x_hidden_state = self.embed_tokens(idx)
+            x_hidden_state = self.embed_tokens(idx).bfloat16()
         else:
             x_hidden_state = idx # No embedding layer, used for frozen embedding training
 

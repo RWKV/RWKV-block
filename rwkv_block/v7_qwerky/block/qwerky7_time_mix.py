@@ -266,12 +266,12 @@ class Qwerky7TimeMix(torch.nn.Module):
 
         xr = xw = xk = xv = xa = xg = x.to(self.q_proj.weight.device)
 
-        r = self.q_proj(xr)
-        w_lora_result = self.w0 + (torch.tanh(xw @ self.w1) @ self.w2).float()
-        k = self.k_proj(xk)
-        v = self.v_proj(xv)
-        g = torch.sigmoid(xg @ self.g1) @ self.g2
-        iclr = torch.sigmoid(self.a0 + (xa @ self.a1) @ self.a2) # a is "in-context learning rate"
+        r = self.q_proj(xr.to(self.q_proj.weight.dtype))
+        w_lora_result = self.w0.float() + (torch.tanh(xw.float() @ self.w1.float()) @ self.w2.float()).float()
+        k = self.k_proj(xk.to(self.k_proj.weight.dtype))
+        v = self.v_proj(xv.to(self.v_proj.weight.dtype))
+        g = torch.sigmoid(xg.float() @ self.g1.float()) @ self.g2.float()
+        iclr = torch.sigmoid(self.a0.float() + (xa.float() @ self.a1.float()) @ self.a2.float()) # a is "in-context learning rate"
 
         ##########
         # Apply rotary pos emb
@@ -314,7 +314,7 @@ class Qwerky7TimeMix(torch.nn.Module):
         if v_first_val is None:
             v_first_val = v # store the v of the first layer
         else:
-            v = v + (v_first_val - v) * torch.sigmoid(self.v0 + (xv @ self.v1) @ self.v2) # add value residual
+            v = v.float() + (v_first_val.float() - v.float()) * torch.sigmoid(self.v0.float() + (xv.float() @ self.v1.float()) @ self.v2.float()) # add value residual
             
         ##########
         # Auto select the backend if not specified
@@ -352,7 +352,8 @@ class Qwerky7TimeMix(torch.nn.Module):
         # ---
         # xx = xx + ((r.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)*k.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)*self.r_k).sum(dim=-1, keepdim=True) * v.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)).view(BATCH_SIZE,SEQ_LEN,IN_EMB_SIZE)
         
-        xo = self.o_proj(xn * g).to(dtype=x_dtype)
+        # xo = self.o_proj(xn * g).to(dtype=x_dtype)
+        xo = F.linear((xn * g).float(), self.o_proj.weight.float()).to(dtype=x_dtype)
 
         # Return the results
         return xo, wkv_state_out, v_first_val

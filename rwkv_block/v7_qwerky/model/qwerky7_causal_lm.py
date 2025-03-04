@@ -52,7 +52,7 @@ class Qwerky7CausalLM(nn.Module):
 
         Returns the output logits and the next state
         '''
-        hidden_state, ret_stateList = self.model(input_ids, prv_stateList, ret_stateList, overwrite_ret_tensor)
+        hidden_state, ret_stateList = self.model(input_ids, prv_stateList, ret_stateList, overwrite_ret_tensor=overwrite_ret_tensor)
         logits = self.lm_head(hidden_state)
         return logits, ret_stateList
     

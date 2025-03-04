@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 from typing import Union, Tuple
 
 from ...v7_goose.block.rwkv7_layer_block import RWKV7LayerBlock
@@ -94,21 +95,40 @@ class Qwerky7LayerBlock(torch.nn.Module):
 
         # Forward the time mix, with position embeddings
         att_out, tmix_wkv, v_first = self.self_attn(
-            self.input_layernorm(x),
+            self.input_layernorm(x).bfloat16(),
             last_wkv_state, # tmix_wkv,
             v_first,
             position_embeddings=position_embeddings
         )
 
         # x = x + att_out
-        x = self.drop0(x + att_out)
+        x = self.drop0(x + att_out).to(torch.bfloat16)
 
-        mlp_out = self.mlp(
-            self.post_attention_layernorm(x)
-        )
+        # MLP layer handling - due to deepspeed wierd sorcery
+        # of hijacking the MLP layer, and casting things to float, 
+        # we are reimplementing it here
+        # ---
+        # mlp_out = self.mlp(
+        #     self.post_attention_layernorm(x)
+        # )
+        # ---
+        post_att_norm = self.post_attention_layernorm(x)
+        mlp_gate_proj = self.mlp.gate_proj
+        mlp_up_proj   = self.mlp.up_proj
+        mlp_down_proj = self.mlp.down_proj
+        mlp_act_fn    = self.mlp.act_fn
+
+        # Get the weights and perform the linear operations
+        # ---
+        # `self.down_proj(self.act_fn(self.gate_proj(hidden_state)) * self.up_proj(hidden_state))`
+        # ---
+        gate_out = F.linear(post_att_norm.bfloat16(), mlp_gate_proj.weight.bfloat16()).bfloat16()
+        act_out  = mlp_act_fn(gate_out).bfloat16()
+        up_out   = F.linear(post_att_norm.bfloat16(), mlp_up_proj.weight.bfloat16()).bfloat16()
+        mlp_out  = F.linear(act_out * up_out, mlp_down_proj.weight.bfloat16()).bfloat16()
 
         # x = x + ffn_out
-        x = self.drop1(x + mlp_out)
+        x = self.drop1(x + mlp_out).bfloat16()
 
         # Return the output
         return x, tmix_wkv, v_first
@@ -122,7 +142,7 @@ class Qwerky7LayerBlock(torch.nn.Module):
         out_x:torch.Tensor, 
         out_wkv_state: torch.Tensor,
         out_v_first:torch.Tensor
-        ) -> tuple[torch.Tensor,torch.Tensor,torch.Tensor]:
+    ) -> tuple[torch.Tensor,torch.Tensor,torch.Tensor]:
         '''
         Compiled varient of the forward function
         With no new tensors being created for the output
