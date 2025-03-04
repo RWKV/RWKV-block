@@ -11,6 +11,12 @@ from .qwerky7_block_config_map import Qwerky7BlockConfigMap
 from transformers.models.qwen2.modeling_qwen2 import Qwen2RMSNorm, Qwen2MLP
 from dataclasses import dataclass
 
+from deepspeed.runtime.zero.linear import zero3_linear_wrap
+def bf16_linear(input, weight):
+    input = input.bfloat16()
+    weight = weight.bfloat16()
+    return zero3_linear_wrap(input, weight).bfloat16()
+
 @dataclass
 class Qwerky7Qwen2MLPConfig:
     '''
@@ -122,10 +128,10 @@ class Qwerky7LayerBlock(torch.nn.Module):
         # ---
         # `self.down_proj(self.act_fn(self.gate_proj(hidden_state)) * self.up_proj(hidden_state))`
         # ---
-        gate_out = F.linear(post_att_norm.bfloat16(), mlp_gate_proj.weight.bfloat16()).bfloat16()
+        gate_out = bf16_linear(post_att_norm.bfloat16(), mlp_gate_proj.weight.bfloat16()).bfloat16()
         act_out  = mlp_act_fn(gate_out).bfloat16()
-        up_out   = F.linear(post_att_norm.bfloat16(), mlp_up_proj.weight.bfloat16()).bfloat16()
-        mlp_out  = F.linear(act_out * up_out, mlp_down_proj.weight.bfloat16()).bfloat16()
+        up_out   = bf16_linear(post_att_norm.bfloat16(), mlp_up_proj.weight.bfloat16()).bfloat16()
+        mlp_out  = bf16_linear(act_out * up_out, mlp_down_proj.weight.bfloat16()).bfloat16()
 
         # x = x + ffn_out
         x = self.drop1(x + mlp_out).bfloat16()
