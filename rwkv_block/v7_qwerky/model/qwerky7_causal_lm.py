@@ -45,7 +45,7 @@ class Qwerky7CausalLM(nn.Module):
             prv_stateList:list[torch.Tensor] = None,  
             ret_stateList:list[torch.Tensor] = None,
             overwrite_ret_tensor:bool=False
-        ) -> torch.Tensor:
+        ) -> tuple[torch.Tensor,list[torch.Tensor]]:
         '''
         Forward the layer set, given the input tokens and the last state
         Last state is a list of time mix wkv state
