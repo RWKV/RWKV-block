@@ -34,6 +34,9 @@ class Qwerky7Model(nn.Module):
         padding_idx = configMap.padding_idx
         head_size = configMap.head_size
 
+        # Checkpoint function hook
+        self.checkpoint_function = None
+
         # The following default device overwrite, is to speed up qwen related module initialization
         default_device = torch.get_default_device()
         default_dtype = torch.get_default_dtype()
@@ -339,7 +342,14 @@ class Qwerky7Model(nn.Module):
         To implement gradient checkpointing for use in various trainers
         '''
         x_hidden_state = x_hidden_state.to(layer.input_layernorm.weight.device, non_blocking=True)
-        return layer(x_hidden_state, prv_stateList, v_first, position_embeddings=position_embeddings)
+
+        if self.checkpoint_function is not None:
+            # Use the checkpoint function if set
+            return self.checkpoint_function(
+                layer, x_hidden_state, prv_stateList, v_first, position_embeddings
+            )
+        else:
+            return layer(x_hidden_state, prv_stateList, v_first, position_embeddings)
     
     def _forward_internal(
         self, idx:torch.Tensor, 
@@ -353,8 +363,11 @@ class Qwerky7Model(nn.Module):
         Due to the lack of safety checks, this should not be used directly
         '''
         # Lets get the embedding
-        idx = idx.to(self.embed_tokens.weight.device, non_blocking=True)
-        x_hidden_state = self.embed_tokens(idx)
+        if self.embed_tokens is not None:
+            idx = idx.to(self.embed_tokens.weight.device, non_blocking=True)
+            x_hidden_state = self.embed_tokens(idx)
+        else:
+            x_hidden_state = idx # No embedding layer, used for frozen embedding training
 
         # Forward the layer layers
         x_output_embedding, retStateList = self._forward_internal_embeddings(x_hidden_state, prv_stateList, ret_stateList, position_ids, overwrite_ret_tensor)
