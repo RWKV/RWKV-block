@@ -284,13 +284,21 @@ class Qwerky7TimeMix(torch.nn.Module):
         # Apply rotary pos emb
         ##########
         if position_embeddings is not None:
-            r = r.view(BATCH_SIZE,SEQ_LEN,-1,HEAD_SIZE)
-            k = k.view(BATCH_SIZE,SEQ_LEN,-1,HEAD_SIZE)
-            # r = r.transpose(1,2) # BHTN
-            # k = k.transpose(1,2) # B(kvh)TN
+            # Debug prints
+            print(f"r shape before view: {r.shape}")  # Should be [B, T, hidden_size]
+            print(f"k shape before view: {k.shape}")  # Should be [B, T, hidden_size_att]
+            print(f"N_HEAD: {N_HEAD}, n_gqa_head: {self.n_gqa_head}, HEAD_SIZE: {HEAD_SIZE}")
+            
+            r = r.view(BATCH_SIZE, SEQ_LEN, N_HEAD, HEAD_SIZE)
+            k = k.view(BATCH_SIZE, SEQ_LEN, self.n_gqa_head, HEAD_SIZE)
+            
+            print(f"r shape after view: {r.shape}")  # Should be [B, T, N_HEAD, HEAD_SIZE]
+            print(f"k shape after view: {k.shape}")  # Should be [B, T, n_gqa_head, HEAD_SIZE]
+            
             cos, sin = position_embeddings
-            # cos, sin = shared.angles.unbind(0)
             r, k = apply_rotary_pos_emb(r, k, cos, sin, unsqueeze_dim=2)
+            r = r.view(BATCH_SIZE, SEQ_LEN, -1)
+            k = k.view(BATCH_SIZE, SEQ_LEN, -1)
             # r = r.transpose(1,2).view(B,T,-1).to(v.dtype)
             # k = k.transpose(1,2).view(B,T,-1).to(v.dtype)
 
