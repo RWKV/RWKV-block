@@ -46,8 +46,10 @@ class Qwerky7Model(nn.Module):
         with torch.device(device):
             # Embedding layer
             self.embed_tokens = nn.Embedding(vocab_size, hidden_size, padding_idx, dtype=dtype)
+
             # Initialize rotary embeddings, which is used for all layers (both rwkv and qwerky)
-            self.rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
+            if configMap.use_rotary_pos_emb:
+                self.rotary_emb = Qwen2RotaryEmbedding(config=config.hybrid_layer_config())
 
             # main layers
             self.layers = nn.ModuleList([
@@ -247,7 +249,9 @@ class Qwerky7Model(nn.Module):
         forward_chunk_count = math.ceil( x_input_length / forward_chunk_size )
 
         # Apply rotary embeddings to all layers
-        position_embeddings = self.rotary_emb(x_hidden_state, position_ids)
+        position_embeddings = None
+        if self.configMap.use_rotary_pos_emb:
+            position_embeddings = self.rotary_emb(x_hidden_state, position_ids)
 
         # Process prefix hybrid layers if any
         if self.configMap.num_prefix_hybrid_layers > 0:

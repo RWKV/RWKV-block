@@ -32,6 +32,9 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
     rope_theta: float = 1000000.0
     max_position_embeddings: int = 32768
 
+    # Rotary positional embeddings
+    use_rotary_pos_emb: bool = True
+
     # ---
     # Initializer, with excess arg ignore
     # ---
@@ -52,6 +55,8 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
         hybrid_attention_dropout: float = 0.0,
         max_position_embeddings: int = 32768,
         # ---
+        use_rotary_pos_emb: bool = True,
+        # ---
         **kwargs
     ) -> None:
         self.vocab_size = vocab_size
@@ -60,6 +65,7 @@ class Qwerky7ConfigMap(Qwerky7BlockConfigMap):
         self.padding_idx = padding_idx
         # ---
         self.max_position_embeddings = max_position_embeddings
+        self.use_rotary_pos_emb = use_rotary_pos_emb
         # ---
         self.num_suffix_hybrid_layers = num_suffix_hybrid_layers
         self.num_prefix_hybrid_layers = num_prefix_hybrid_layers
