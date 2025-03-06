@@ -12,13 +12,19 @@ Example usage:
         --output model.pth
 """
 
+import os, sys
+if __name__ == '__main__':
+    # Add project root to path
+    proj_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+    if proj_path not in sys.path:
+        sys.path.insert(0, proj_path)
+
 import argparse
-import os
 import torch
 from typing import Optional
 
-from .qwerky7_config_map import Qwerky7ConfigMap
-from .qwerky7_model import Qwerky7Model
+from rwkv_block.v7_qwerky.model.qwerky7_config_map import Qwerky7ConfigMap
+from rwkv_block.v7_qwerky.model.qwerky7_model import Qwerky7Model
 
 def parse_args():
     """Parse command line arguments."""
