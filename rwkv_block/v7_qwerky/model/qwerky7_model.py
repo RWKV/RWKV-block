@@ -37,6 +37,8 @@ class Qwerky7Model(nn.Module):
         # Checkpoint function hook
         self.checkpoint_function = None
         # Linear module function
+        # This is used to replace the linear module, with a custom implementation
+        # Might be requried to work around some known deepspeed 3 issues
         self.linear_module_function = None
 
         # The following default device overwrite, is to speed up qwen related module initialization
@@ -175,6 +177,23 @@ class Qwerky7Model(nn.Module):
 
     ### ---
     ###
+    ### Custom hook overwrites
+    ###
+    ### ---
+
+    def _configure_linear_operation(self, linear_module_function):
+        '''
+        Configure the linear operation function, to be used by the model
+        '''
+        self.linear_module_function = linear_module_function
+        for layer in self.layers:
+            if hasattr(layer, 'linear_module_function'):
+                layer.linear_module_function = linear_module_function
+                if hasattr(layer, 'self_attn'):
+                    layer.self_attn.linear_module_function = linear_module_function
+
+    ### ---
+    ###
     ### Model Forward
     ###
     ### ---
@@ -218,6 +237,11 @@ class Qwerky7Model(nn.Module):
         batch_size = x_hidden_state.shape[0]
         x_input_length = x_hidden_state.shape[1]
 
+        # Normalize x_hidden_state to configured dtype
+        config_dtype = self.configMap.get_dtype()
+        if config_dtype != None and config_dtype != "auto":
+            x_hidden_state = x_hidden_state.to(config_dtype)
+
         # Throw an error if prv_stateList is provided, with hybrid layers (prefix or suffix)
         # as KV cache reuse is not implemented, and we will need the full index
         if prv_stateList is not None and self.configMap.num_hybrid_layers() > 0:
@@ -234,9 +258,6 @@ class Qwerky7Model(nn.Module):
 
         # Initialize the v_first
         v_first = None
-
-        # Normalize x_hidden_state to bfloat16
-        x_hidden_state = x_hidden_state.to(torch.bfloat16)
 
         # Uses the input hidden state, as the v_first if v_first_with_embedding is enabled
         if self.configMap.v_first_with_embedding:

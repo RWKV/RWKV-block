@@ -9,13 +9,6 @@ from transformers.models.qwen2.modeling_qwen2 import apply_rotary_pos_emb
 from ...v7_goose.block.rwkv7_time_mix import RWKV7TimeMix, _run_tmix_backend, _has_fla, _has_triton, _has_cuda
 from .qwerky7_block_config_map import Qwerky7BlockConfigMap
 
-from deepspeed.runtime.zero.linear import zero3_linear_wrap
-def bf16_linear(input, weight, bias=None):
-    input = input.bfloat16()
-    weight = weight.bfloat16()
-    bias = bias.bfloat16() if bias is not None else None
-    return zero3_linear_wrap(input, weight, bias).bfloat16()
-
 class Qwerky7TimeMix(torch.nn.Module):
     '''
     Time Mix block for QWERKY V7
@@ -65,6 +58,11 @@ class Qwerky7TimeMix(torch.nn.Module):
 
         # Backend
         self.tmix_backend = configMap.tmix_backend
+
+        # Linear module function
+        # This is used to replace the linear module, with a custom implementation
+        # Might be requried to work around some known deepspeed 3 issues
+        self.linear_module_function = None
 
         # Build the various params
         # ---
@@ -211,6 +209,16 @@ class Qwerky7TimeMix(torch.nn.Module):
 
         self.ln_x.reset_parameters()
 
+    def _linear_operation(self, x:Tensor, weight:Tensor, bias:Tensor = None) -> Tensor:
+        '''
+        Perform the linear operation with the given weight and bias, 
+        using linear_module_function if configured
+        '''
+        if self.linear_module_function is not None:
+            return self.linear_module_function(x, weight, bias)
+        else:
+            return F.linear(x, weight, bias)
+
     def forward(
         self, 
         x:Tensor, 
@@ -273,10 +281,10 @@ class Qwerky7TimeMix(torch.nn.Module):
 
         xr = xw = xk = xv = xa = xg = x.to(self.q_proj.weight.device)
 
-        r = bf16_linear(xr, self.q_proj.weight, self.q_proj.bias) # self.q_proj(xr.to(self.q_proj.weight.dtype))
+        r = self._linear_operation(xr, self.q_proj.weight, self.q_proj.bias) # self.q_proj(xr.to(self.q_proj.weight.dtype))
         w_lora_result = self.w0.float() + (torch.tanh(xw.float() @ self.w1.float()) @ self.w2.float()).float()
-        k = bf16_linear(xk, self.k_proj.weight, self.k_proj.bias) # self.k_proj(xk.to(self.k_proj.weight.dtype))
-        v = bf16_linear(xv, self.v_proj.weight, self.v_proj.bias) # self.v_proj(xv.to(self.v_proj.weight.dtype))
+        k = self._linear_operation(xk, self.k_proj.weight, self.k_proj.bias) # self.k_proj(xk.to(self.k_proj.weight.dtype))
+        v = self._linear_operation(xv, self.v_proj.weight, self.v_proj.bias) # self.v_proj(xv.to(self.v_proj.weight.dtype))
         g = torch.sigmoid(xg.float() @ self.g1.float()) @ self.g2.float()
         iclr = torch.sigmoid(self.a0.float() + (xa.float() @ self.a1.float()) @ self.a2.float()) # a is "in-context learning rate"
 
@@ -368,8 +376,8 @@ class Qwerky7TimeMix(torch.nn.Module):
         # xx = xx + ((r.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)*k.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)*self.r_k).sum(dim=-1, keepdim=True) * v.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)).view(BATCH_SIZE,SEQ_LEN,IN_EMB_SIZE)
         
         # xo = self.o_proj(xn * g).to(dtype=x_dtype)
-         # F.linear((xn * g).float(), self.o_proj.weight.float()).to(dtype=x_dtype)
-        xo = bf16_linear((xn * g), self.o_proj.weight)
+        # F.linear((xn * g).float(), self.o_proj.weight.float()).to(dtype=x_dtype)
+        xo = self._linear_operation((xn * g).float(), self.o_proj.weight.float()).to(x_dtype)
 
         # Return the results
         return xo, wkv_state_out, v_first_val

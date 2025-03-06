@@ -11,13 +11,6 @@ from .qwerky7_block_config_map import Qwerky7BlockConfigMap
 from transformers.models.qwen2.modeling_qwen2 import Qwen2RMSNorm, Qwen2MLP
 from dataclasses import dataclass
 
-from deepspeed.runtime.zero.linear import zero3_linear_wrap
-def bf16_linear(input, weight, bias=None):
-    input = input.bfloat16()
-    weight = weight.bfloat16()
-    bias = bias.bfloat16() if bias is not None else None
-    return zero3_linear_wrap(input, weight, bias).bfloat16()
-
 @dataclass
 class Qwerky7Qwen2MLPConfig:
     '''
@@ -43,6 +36,11 @@ class Qwerky7LayerBlock(torch.nn.Module):
         device = configMap.get_device(None)
         dtype = configMap.get_dtype('bfloat16')
         rms_norm_eps = configMap.rms_norm_eps
+
+        # Linear module function
+        # This is used to replace the linear module, with a custom implementation
+        # Might be requried to work around some known deepspeed 3 issues
+        self.linear_module_function = None
 
         # Setup the modules
         with torch.device(device):
@@ -80,6 +78,15 @@ class Qwerky7LayerBlock(torch.nn.Module):
         self.mlp.up_proj.reset_parameters()
         self.mlp.down_proj.reset_parameters()
 
+    def _linear_operation(self, x:torch.Tensor, weight:torch.Tensor, bias:torch.Tensor = None) -> torch.Tensor:
+        '''
+        Perform the linear operation with the given weight and bias, 
+        using linear_module_function if configured
+        '''
+        if self.linear_module_function is not None:
+            return self._linear_operation(x, weight, bias)
+        else:
+            return F.linear(x, weight, bias)
 
     def forward(
         self, 
@@ -97,45 +104,50 @@ class Qwerky7LayerBlock(torch.nn.Module):
         Returns a pair of the output embedding, v_first and the next state
         '''
 
+        # Config dtype
+        request_dtype = self.configMap.get_dtype(x.dtype)
+
         # Ensure everything is in the right device
         x = x.to(self.input_layernorm.weight.device)
 
         # Forward the time mix, with position embeddings
         att_out, tmix_wkv, v_first = self.self_attn(
-            self.input_layernorm(x).bfloat16(),
+            self.input_layernorm(x).to(request_dtype),
             last_wkv_state, # tmix_wkv,
             v_first,
             position_embeddings=position_embeddings
         )
 
         # x = x + att_out
-        x = self.drop0(x + att_out).to(torch.bfloat16)
+        x = self.drop0(x + att_out).to(request_dtype)
+
+        # Does the post att layernorm first
+        post_att_norm = self.post_attention_layernorm(x)
 
         # MLP layer handling - due to deepspeed wierd sorcery
         # of hijacking the MLP layer, and casting things to float, 
         # we are reimplementing it here
         # ---
-        # mlp_out = self.mlp(
-        #     self.post_attention_layernorm(x)
-        # )
-        # ---
-        post_att_norm = self.post_attention_layernorm(x)
-        mlp_gate_proj = self.mlp.gate_proj
-        mlp_up_proj   = self.mlp.up_proj
-        mlp_down_proj = self.mlp.down_proj
-        mlp_act_fn    = self.mlp.act_fn
+        if self.linear_module_function is None:
+            mlp_out = self.mlp(post_att_norm)
+        else:
+            # Then get the various weights
+            mlp_gate_proj = self.mlp.gate_proj
+            mlp_up_proj   = self.mlp.up_proj
+            mlp_down_proj = self.mlp.down_proj
+            mlp_act_fn    = self.mlp.act_fn
 
-        # Get the weights and perform the linear operations
-        # ---
-        # `self.down_proj(self.act_fn(self.gate_proj(hidden_state)) * self.up_proj(hidden_state))`
-        # ---
-        gate_out = bf16_linear(post_att_norm.bfloat16(), mlp_gate_proj.weight.bfloat16()).bfloat16()
-        act_out  = mlp_act_fn(gate_out).bfloat16()
-        up_out   = bf16_linear(post_att_norm.bfloat16(), mlp_up_proj.weight.bfloat16()).bfloat16()
-        mlp_out  = bf16_linear(act_out * up_out, mlp_down_proj.weight.bfloat16()).bfloat16()
+            # And perform the linear operations
+            # ---
+            # `self.down_proj(self.act_fn(self.gate_proj(hidden_state)) * self.up_proj(hidden_state))`
+            # ---
+            gate_out = self._linear_operation(post_att_norm.to(request_dtype), mlp_gate_proj.weight.to(request_dtype)).to(request_dtype)
+            act_out  = mlp_act_fn(gate_out).to(request_dtype)
+            up_out   = self._linear_operation(post_att_norm.to(request_dtype), mlp_up_proj.weight.to(request_dtype)).to(request_dtype)
+            mlp_out  = self._linear_operation(act_out * up_out, mlp_down_proj.weight.to(request_dtype)).to(request_dtype)
 
         # x = x + ffn_out
-        x = self.drop1(x + mlp_out).bfloat16()
+        x = self.drop1(x + mlp_out).to(request_dtype)
 
         # Return the output
         return x, tmix_wkv, v_first
