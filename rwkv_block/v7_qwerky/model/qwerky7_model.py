@@ -36,6 +36,8 @@ class Qwerky7Model(nn.Module):
 
         # Checkpoint function hook
         self.checkpoint_function = None
+        # Linear module function
+        self.linear_module_function = None
 
         # The following default device overwrite, is to speed up qwen related module initialization
         default_device = torch.get_default_device()
@@ -256,16 +258,15 @@ class Qwerky7Model(nn.Module):
         # Process prefix hybrid layers if any
         if self.configMap.num_prefix_hybrid_layers > 0:
             for i in range(self.configMap.num_prefix_hybrid_layers):
-                layer = self.layers[i]
-                x_hidden_state = x_hidden_state.to(layer.input_layernorm.weight.device, non_blocking=True)
-                x_hidden_state = layer(
-                    hidden_states=x_hidden_state,
-                    position_embeddings=position_embeddings,
-                    position_ids=position_ids,
-                    past_key_value=None,
-                    output_attentions=False,
-                    use_cache=False,
-                )[0]
+                x_hidden_state = self._forward_hybrid_layer_hook(
+                    self.layers[i],
+                    x_hidden_states=x_hidden_state,
+                    position_embeddings=position_embeddings, # Used by layer's internal rotary_emb
+                    position_ids=position_ids,  # Used by layer's internal rotary_emb
+                    past_key_value=None,        # No KV cache support yet
+                    output_attentions=False,    # Match Qwerky behavior
+                    use_cache=False,            # No KV cache support yet
+                )
 
         # Process Qwerky layers
         qwerky_start = self.configMap.num_prefix_hybrid_layers
@@ -319,16 +320,15 @@ class Qwerky7Model(nn.Module):
         # Process suffix hybrid layers if any
         if self.configMap.num_suffix_hybrid_layers > 0:
             for i in range(qwerky_end, len(self.layers)):
-                layer = self.layers[i]
-                x_hidden_state = x_hidden_state.to(layer.input_layernorm.weight.device, non_blocking=True)
-                x_hidden_state = layer(
-                    hidden_states=x_hidden_state,
+                x_hidden_state = self._forward_hybrid_layer_hook(
+                    self.layers[i],
+                    x_hidden_states=x_hidden_state,
                     position_embeddings=position_embeddings, # Used by layer's internal rotary_emb
                     position_ids=position_ids,  # Used by layer's internal rotary_emb
                     past_key_value=None,        # No KV cache support yet
                     output_attentions=False,    # Match Qwerky behavior
                     use_cache=False,            # No KV cache support yet
-                )[0]
+                )
 
         # Final layer norm, without the head
         x_hidden_state = x_hidden_state.to(self.norm.weight.device, non_blocking=True)
@@ -337,19 +337,19 @@ class Qwerky7Model(nn.Module):
         # Return the output and the state list
         return x_hidden_state, ret_stateList
         
-    def _forward_qwerky_layer_hook(self, 
-            layer:Qwerky7LayerBlock, 
-            x_hidden_state:torch.Tensor, 
-            prv_stateList:list[torch.Tensor], 
-            v_first:torch.Tensor,
-            position_embeddings:torch.Tensor = None
+    def _forward_qwerky_layer_hook(
+        self, 
+        layer:Qwerky7LayerBlock, 
+        x_hidden_state:torch.Tensor, 
+        prv_stateList:list[torch.Tensor], 
+        v_first:torch.Tensor,
+        position_embeddings:torch.Tensor = None
     ) -> tuple[torch.Tensor,torch.Tensor,torch.Tensor]:
         '''
         Forward layer hook operation, that is easily overridable.
         To implement gradient checkpointing for use in various trainers
         '''
         x_hidden_state = x_hidden_state.to(layer.input_layernorm.weight.device, non_blocking=True)
-
         if self.checkpoint_function is not None:
             # Use the checkpoint function if set
             return self.checkpoint_function(
@@ -357,6 +357,36 @@ class Qwerky7Model(nn.Module):
             )
         else:
             return layer(x_hidden_state, prv_stateList, v_first, position_embeddings)
+        
+    def _forward_hybrid_layer_hook(
+        self,
+        layer:Qwen2DecoderLayer,
+        x_hidden_states:torch.Tensor,
+        position_embeddings:torch.Tensor,
+        position_ids:torch.Tensor,
+        past_key_value:Union[None, tuple[torch.Tensor,torch.Tensor]],
+        output_attentions:bool=False,
+        use_cache:bool=False
+    ):
+        '''
+        Forward layer hook operation, that is easily overridable.
+        To implement gradient checkpointing for use in various trainers
+        '''
+        x_hidden_states = x_hidden_states.to(layer.input_layernorm.weight.device, non_blocking=True)
+        if self.checkpoint_function is not None:
+            # Use the checkpoint function if set
+            return self.checkpoint_function(
+                layer, x_hidden_states, position_embeddings, position_ids, past_key_value, output_attentions, use_cache
+            )[0]
+        else:
+            return layer(
+                hidden_states=x_hidden_states,
+                position_embeddings=position_embeddings,
+                position_ids=position_ids,
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache
+            )[0]
     
     def _forward_internal(
         self, idx:torch.Tensor, 
