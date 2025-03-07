@@ -429,7 +429,7 @@ class Qwerky7Model(nn.Module):
         # Lets get the embedding
         if self.embed_tokens is not None:
             idx = idx.to(self.embed_tokens.weight.device, non_blocking=True)
-            x_hidden_state = self.embed_tokens(idx).bfloat16()
+            x_hidden_state = self.embed_tokens(idx).to( self.configMap.get_dtype("bfloat16") )
         else:
             x_hidden_state = idx # No embedding layer, used for frozen embedding training
 
