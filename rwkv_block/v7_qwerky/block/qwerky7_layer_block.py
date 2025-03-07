@@ -84,7 +84,7 @@ class Qwerky7LayerBlock(torch.nn.Module):
         using linear_module_function if configured
         '''
         if self.linear_module_function is not None:
-            return self._linear_operation(x, weight, bias)
+            return self.linear_module_function(x, weight, bias)
         else:
             return F.linear(x, weight, bias)
 

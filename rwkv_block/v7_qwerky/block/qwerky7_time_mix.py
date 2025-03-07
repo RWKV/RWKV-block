@@ -209,7 +209,7 @@ class Qwerky7TimeMix(torch.nn.Module):
 
         self.ln_x.reset_parameters()
 
-    def _linear_operation(self, x:Tensor, weight:Tensor, bias:Tensor = None) -> Tensor:
+    def _linear_operation(self, x:torch.Tensor, weight:torch.Tensor, bias:torch.Tensor = None) -> torch.Tensor:
         '''
         Perform the linear operation with the given weight and bias, 
         using linear_module_function if configured
