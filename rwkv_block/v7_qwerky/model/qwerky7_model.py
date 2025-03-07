@@ -181,7 +181,7 @@ class Qwerky7Model(nn.Module):
     ###
     ### ---
 
-    def _configure_linear_operation(self, linear_module_function):
+    def setup_linear_operation(self, linear_module_function):
         '''
         Configure the linear operation function, to be used by the model
         '''
@@ -191,6 +191,12 @@ class Qwerky7Model(nn.Module):
                 layer.linear_module_function = linear_module_function
                 if hasattr(layer, 'self_attn'):
                     layer.self_attn.linear_module_function = linear_module_function
+
+    def setup_checkpoint_function(self, checkpoint_function):
+        '''
+        Configure the checkpoint function, to be used by the model
+        '''
+        self.checkpoint_function = checkpoint_function
 
     ### ---
     ###
@@ -238,7 +244,7 @@ class Qwerky7Model(nn.Module):
         x_input_length = x_hidden_state.shape[1]
 
         # Normalize x_hidden_state to configured dtype
-        config_dtype = self.configMap.get_dtype()
+        config_dtype = self.configMap.get_dtype(None)
         if config_dtype != None and config_dtype != "auto":
             x_hidden_state = x_hidden_state.to(config_dtype)
 

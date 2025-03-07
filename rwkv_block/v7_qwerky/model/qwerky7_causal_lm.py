@@ -39,6 +39,30 @@ class Qwerky7CausalLM(nn.Module):
         '''
         return self.model.get_init_state(batch_size, skip_init_state=skip_init_state)
 
+    ### ---
+    ###
+    ### Custom hook overwrites
+    ###
+    ### ---
+
+    def setup_linear_operation(self, linear_module_function):
+        '''
+        Configure the linear operation function, to be used by the model
+        '''
+        self.model.setup_linear_operation(linear_module_function)
+
+    def setup_checkpoint_function(self, checkpoint_function):
+        '''
+        Configure the checkpoint function, to be used by the model
+        '''
+        self.model.setup_checkpoint_function(checkpoint_function)
+
+    ### ---
+    ###
+    ### Forward operation
+    ###
+    ### ---
+
     def forward(
             self, 
             input_ids: torch.Tensor,

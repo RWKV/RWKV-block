@@ -25,6 +25,7 @@ from typing import Optional
 
 from rwkv_block.v7_qwerky.model.qwerky7_config_map import Qwerky7ConfigMap
 from rwkv_block.v7_qwerky.model.qwerky7_model import Qwerky7Model
+from rwkv_block.v7_qwerky.model.qwerky7_causal_lm import Qwerky7CausalLM
 
 def str2bool(v):
     """Convert string to boolean."""
@@ -142,7 +143,7 @@ def init_model(args) -> None:
     
     # Create and initialize model
     print("Creating model...")
-    model = Qwerky7Model(config)
+    model = Qwerky7CausalLM(config)
     
     print("Resetting parameters to initial values...")
     model.reset_parameters()
