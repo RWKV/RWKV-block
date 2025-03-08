@@ -271,6 +271,7 @@ class Qwerky7Model(nn.Module):
 
         # Force overwrite_ret_tensor to False, if ret_stateList is None
         if ret_stateList is None:
+            ret_stateList = [ None for i in range(self.configMap.num_qwerky_layers()) ]
             overwrite_ret_tensor = False
 
         # Get the forward chunk size, and the chunk count
