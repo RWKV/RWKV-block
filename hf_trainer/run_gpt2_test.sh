@@ -20,8 +20,7 @@ echo "Output directory: $OUTPUT_DIR"
 # Run the trainer
 python "$PROJECT_ROOT/hf_trainer/hf_trainer.py" \
   --config "$CONFIG_PATH" \
-  --output_dir "$OUTPUT_DIR" \
-  --debug
+  --output_dir "$OUTPUT_DIR"
 
 # Check the exit code
 if [ $? -eq 0 ]; then
