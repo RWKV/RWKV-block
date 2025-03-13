@@ -1,0 +1,73 @@
+{
+  // Model configuration
+  "model": {
+    "name_or_path": "gpt2",  // Small GPT2 model
+    "use_bf16": false,  // Disable BF16 for CPU training
+    "load_in_8bit": false,
+    "load_in_4bit": false,
+    "force_cpu": true,  // Force CPU usage even if CUDA is available
+    
+    // Model-specific arguments
+    "model_args": {
+      "trust_remote_code": true
+    }
+  },
+
+  // Training configuration
+  "training": {
+    "learning_rate": 5e-5,
+    "weight_decay": 0.01,
+    "num_train_epochs": 1,  // Just one epoch for testing
+    "gradient_accumulation_steps": 2,
+    "warmup_steps": 10,
+    "max_steps": 20,  // Limited steps for testing
+    "save_steps": 10,
+    "save_total_limit": 1,
+    "logging_steps": 5,
+    "microbatch_size": 1,
+    "output_dir": "./test_output"
+  },
+
+  // Optimizer configuration
+  "optimizer": {
+    "name": "adamw",
+    "beta1": 0.9,
+    "beta2": 0.999,
+    "epsilon": 1e-8
+  },
+
+  // Scheduler configuration
+  "scheduler": {
+    "name": "cosine",
+    "num_warmup_steps": 10
+  },
+
+  // Dataset configuration (using TextDatasetStreamer)
+  "dataset": {
+    "packing_batch_size": 2,  // Small batch size for testing
+    "packing_context_length": 128,  // Short context length for testing
+    "shuffle_buffer_size": 10,
+    "seed": 42,
+    "datasets": [
+      {
+        "hf_path": "wikitext",
+        "hf_args": {
+          "name": "wikitext-2-raw-v1",  // Smaller dataset for testing
+          "split": "train"
+        },
+        "template": "{text}",
+        "weight": 1.0
+      }
+    ]
+  },
+
+  // Logging configuration
+  "logging": {
+    "wandb": {
+      "enabled": false
+    }
+  },
+  
+  // Estimated dataset size (used to calculate number of steps)
+  "estimated_dataset_size": 10000
+}
