@@ -47,6 +47,7 @@ The configuration file uses JSONC format (JSON with Comments). The hjson library
   "use_bf16": true,
   "load_in_8bit": false,
   "load_in_4bit": false,
+  "force_cpu": false,  // Set to true to force CPU usage even if CUDA is available
   
   // Model-specific arguments passed directly to from_pretrained
   "model_args": {

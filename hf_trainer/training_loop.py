@@ -263,7 +263,10 @@ def train_model(
                 microbatch = input_ids[mb_start:mb_end].to(model.device)
                 
                 # Forward pass
-                with torch.cuda.amp.autocast(enabled=config["model"].get("use_bf16", True)):
+                # Use torch.amp.autocast with 'cpu' device type when CUDA is not available or force_cpu is True
+                force_cpu = config["model"].get("force_cpu", False)
+                device_type = 'cuda' if (torch.cuda.is_available() and not force_cpu) else 'cpu'
+                with torch.amp.autocast(device_type=device_type, enabled=config["model"].get("use_bf16", True)):
                     outputs = model(
                         input_ids=microbatch,
                         labels=microbatch,

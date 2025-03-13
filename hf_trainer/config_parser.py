@@ -30,6 +30,7 @@ def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
     model_config.setdefault("use_bf16", True)
     model_config.setdefault("load_in_8bit", False)
     model_config.setdefault("load_in_4bit", False)
+    model_config.setdefault("force_cpu", False)
     
     # Support for model-specific arguments
     model_config.setdefault("model_args", {})

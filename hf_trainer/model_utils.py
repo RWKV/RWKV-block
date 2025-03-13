@@ -67,9 +67,18 @@ def load_model_and_tokenizer(
         **model_load_args
     )
     
-    # Move model to GPU if available
-    if torch.cuda.is_available():
+    # Check if we should force CPU usage
+    force_cpu = model_config.get("force_cpu", False)
+    
+    # Move model to GPU if available and not forcing CPU
+    if torch.cuda.is_available() and not force_cpu:
         model = model.cuda()
+        logger.info("Using CUDA for training")
+    else:
+        if force_cpu:
+            logger.info("Forcing CPU usage as specified in config")
+        else:
+            logger.info("CUDA not available, using CPU for training")
     
     # Log model and tokenizer information
     logger.info(f"Model loaded: {model.__class__.__name__}")
