@@ -23,6 +23,11 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
     # Create logger
     logger = logging.getLogger()
     logger.setLevel(level)
+
+    # Set urllib3 and other libraries to WARNING level to reduce verbosity
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("filelock").setLevel(logging.WARNING)
+    logging.getLogger("fsspec").setLevel(logging.WARNING)
     
     # Remove existing handlers to avoid duplicate logs
     for handler in logger.handlers[:]:
