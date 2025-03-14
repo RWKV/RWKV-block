@@ -1,0 +1,86 @@
+{
+  // Model configuration
+  "model": {
+    "name_or_path": "gpt2",  // HF model name or local path
+    "use_bf16": true,
+    "load_in_8bit": false,
+    "load_in_4bit": false,
+    "force_cpu": false,  // Set to true to force CPU usage even if CUDA is available
+    
+    // Model-specific arguments passed directly to from_pretrained
+    "model_args": {
+      "trust_remote_code": true,
+      // Add any other model-specific arguments here
+    }
+  },
+
+  // Training configuration
+  "training": {
+    "learning_rate": 5e-5,
+    "weight_decay": 0.01,
+    "num_train_epochs": 3,
+    "gradient_accumulation_steps": 4,
+    "warmup_steps": 500,
+    "max_steps": -1,  // -1 means train for num_train_epochs
+    "save_steps": 1000,
+    "save_total_limit": 3,
+    "logging_steps": 100,
+    "microbatch_size": 1,  // Number of samples processed at once
+    "output_dir": "./output"
+  },
+
+  // Optimizer configuration
+  "optimizer": {
+    "name": "adamw",  // Options: adamw, adafactor, sgd, adam
+    "beta1": 0.9,
+    "beta2": 0.999,
+    "epsilon": 1e-8
+  },
+
+  // Scheduler configuration
+  "scheduler": {
+    "name": "cosine",  // Options: linear, cosine, constant, constant_with_warmup
+    "num_warmup_steps": 500
+  },
+
+  // Dataset configuration (using TextDatasetStreamer)
+  "dataset": {
+    "packing_batch_size": 8,
+    "packing_context_length": 4096,
+    "shuffle_buffer_size": 100,
+    "seed": 42,
+    "datasets": [
+      {
+        "hf_path": "wikitext",
+        "hf_args": {
+          "name": "wikitext-103-v1",
+          "split": "train"
+        },
+        "template": "{text}",
+        "weight": 1.0
+      },
+      {
+        "hf_path": "Anthropic/hh-rlhf",
+        "hf_args": {
+          "split": "train"
+        },
+        "template": "### Human: {human}\n\n### Assistant: {assistant}",
+        "weight": 2.0
+      }
+    ]
+  },
+
+  // Logging configuration
+  "logging": {
+    "wandb": {
+      "enabled": false,
+      "project": "hf-trainer",
+      "name": "training-run-1",
+      "entity": null,  // Your W&B username or team name
+      "tags": ["gpt2", "finetune"]
+    }
+  },
+  
+  // Estimated dataset size (used to calculate number of steps)
+  "estimated_dataset_size": 1000000
+}
