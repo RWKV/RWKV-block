@@ -21,13 +21,20 @@ class RWKV7GooseConfigMap(RWKV7BlockConfigMap):
     def __init__(
         self,
         vocab_size: int = 65536,
-        init_wkv_state: bool = False,
         forward_chunk_size: Optional[int] = 4096,
+
+        init_wkv_state: bool = False,
+        freeze_wkv_state: bool = True,
+        freeze_full_weights: bool = False,
         **kwargs
     ) -> None:
         self.vocab_size = vocab_size
-        self.init_wkv_state = init_wkv_state
         self.forward_chunk_size = forward_chunk_size
+
+        self.init_wkv_state = init_wkv_state
+        self.freeze_wkv_state = freeze_wkv_state
+        self.freeze_full_weights = freeze_full_weights
+        
         super().__init__(**kwargs)
         
     @staticmethod

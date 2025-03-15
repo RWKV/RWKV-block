@@ -70,6 +70,7 @@ class RWKV7BlockConfigMap:
         self.dtype = dtype
         self.hidden_size_ffn = hidden_size_ffn
         self.hidden_size_att = hidden_size_att
+        # Intentionally ignore excess kwargs
 
     # ---
     # OPTIONAL PROPS FETCHER

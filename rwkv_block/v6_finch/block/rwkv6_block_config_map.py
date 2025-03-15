@@ -42,6 +42,42 @@ class RWKV6BlockConfigMap:
     dtype: Union[torch.dtype, str, None] = None
 
     # ---
+    # Initializer, with excess arg ignore
+    # ---
+    def __init__(
+        self,
+        num_hidden_layers: int,
+        hidden_size: int,
+        head_size: int = 64,
+        head_size_divisor: int = 8,
+        dropout_rate: float = 0.0,
+        tmix_backend: str = "auto",
+        hidden_size_ffn: Optional[int] = None,
+        hidden_size_att: Optional[int] = None,
+        layer_id: Optional[int] = None,
+        n_head: Optional[int] = None,
+        device: Union[torch.device, str, None] = None,
+        dtype: Union[torch.dtype, str, None] = None,
+        **kwargs
+    ) -> None:
+        '''
+        Constructor for the config
+        '''
+        self.num_hidden_layers = num_hidden_layers
+        self.hidden_size = hidden_size
+        self.head_size = head_size
+        self.head_size_divisor = head_size_divisor
+        self.dropout_rate = dropout_rate
+        self.tmix_backend = tmix_backend
+        self.hidden_size_ffn = hidden_size_ffn
+        self.hidden_size_att = hidden_size_att
+        self.layer_id = layer_id
+        self.n_head = n_head
+        self.device = device
+        self.dtype = dtype
+        # Intentionally ignore excess kwargs
+
+    # ---
     # OPTIONAL PROPS FETCHER
     # ---
 
