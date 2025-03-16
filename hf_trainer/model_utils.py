@@ -132,7 +132,7 @@ def save_model_checkpoint(
         # Save only trainable weights
         trainable_state_dict = {
             k: v for k, v in model.state_dict().items()
-            if v.requires_grad or k.startswith("init_state.")  # Always save init_state parameters
+            if v.requires_grad # Always save init_state parameters
         }
         
         # Count parameters
@@ -142,7 +142,8 @@ def save_model_checkpoint(
         logger.info(f"Saving trainable weights to {checkpoint_dir} ({trainable_params}/{total_params} parameters)")
         model.save_pretrained(checkpoint_dir, state_dict=trainable_state_dict)
     
-    tokenizer.save_pretrained(checkpoint_dir)
+    # -- We do not need to save the tokenizer
+    # tokenizer.save_pretrained(checkpoint_dir)
     
     return checkpoint_dir
 
