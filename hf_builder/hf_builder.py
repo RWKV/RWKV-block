@@ -75,10 +75,11 @@ def build_v6_finch():
         source_dir=f"{current_dir}/../rwkv_block/v6_finch",
         source_cuda_dir=None,  # No CUDA directory for v6_finch
         build_file_order = [
+            "block/rwkv6_optimized_ops.py",
             "block/rwkv6_block_config_map.py",
             "block/rwkv6_channel_mix.py",
             "block/rwkv6_time_mix.py",
-            "block/rwkv6_time_mix_b2.py",
+            # "block/rwkv6_time_mix_b2.py",
             "block/rwkv6_layer_block.py",
             "model/rwkv6_finch_config_map.py",
             "model/rwkv6_finch_model.py",
@@ -176,9 +177,9 @@ def hf_script_builder(
     # relative to the target_dir
     for file in cuda_files:
         # Trim out the front "/"
-        if file.startswith(target_dir+"/"):
-            file = file[len(str(target_dir))+1:]
-        compiled_code.append(f"# - {file}")
+        if str(file).startswith(str(target_dir)+"/"):
+            file = str(file)[len(str(target_dir))+2:]
+        compiled_code.append(f"# - block/kernel/{file}")
 
     compiled_code.extend([
         "#",

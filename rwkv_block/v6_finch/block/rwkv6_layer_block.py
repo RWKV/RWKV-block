@@ -121,8 +121,9 @@ class RWKV6LayerBlock(torch.nn.Module):
         '''
         Given the Full/partial RWKV model weights, load the block weights accordingly
         '''
-        if layer_id == -1:
-            layer_id = self.configMap.get_layer_id(1)
+        if layer_id <= -1:
+            layer_id = self.configMap.get_layer_id(-1)
+        assert layer_id >= 0, f'layer_id must be >= 0, got {layer_id}'
             
         # Get the current state_dict
         current_state_dict = self.state_dict()
@@ -134,5 +135,8 @@ class RWKV6LayerBlock(torch.nn.Module):
                 continue
 
             # Copy the values from the state_dict
-            current_state_dict[n].copy_(model_state_dict[model_key], non_blocking=non_blocking)
-        
+            try:
+                current_state_dict[n].copy_(model_state_dict[model_key], non_blocking=non_blocking)
+            except Exception as e:
+                print(f"[ERROR] loading: {model_key} | model shape: {current_state_dict[n].shape} | weight shape: {model_state_dict[model_key].shape}")
+                raise e

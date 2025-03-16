@@ -31,6 +31,10 @@ class RWKV6BlockConfigMap:
     hidden_size_ffn: Optional[int] = None
     hidden_size_att: Optional[int] = None
 
+    # Time-mix specific DIM sizing
+    tmix_maa_dim: int = 32
+    tmix_decay_dim: int = 64
+
     # Current layer_id of the block
     layer_id: Optional[int] = None
 
@@ -54,6 +58,8 @@ class RWKV6BlockConfigMap:
         tmix_backend: str = "auto",
         hidden_size_ffn: Optional[int] = None,
         hidden_size_att: Optional[int] = None,
+        tmix_maa_dim: int = 32,
+        tmix_decay_dim: int = 64,
         layer_id: Optional[int] = None,
         n_head: Optional[int] = None,
         device: Union[torch.device, str, None] = None,
@@ -71,6 +77,8 @@ class RWKV6BlockConfigMap:
         self.tmix_backend = tmix_backend
         self.hidden_size_ffn = hidden_size_ffn
         self.hidden_size_att = hidden_size_att
+        self.tmix_maa_dim = tmix_maa_dim
+        self.tmix_decay_dim = tmix_decay_dim
         self.layer_id = layer_id
         self.n_head = n_head
         self.device = device

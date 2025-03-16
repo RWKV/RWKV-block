@@ -83,6 +83,9 @@ class RWKV6FinchConfigMap(RWKV6BlockConfigMap):
             hidden_size_att=state_dict['blocks.0.att.key.weight'].shape[0],
             hidden_size_ffn=state_dict['blocks.0.ffn.key.weight'].shape[0],
 
+            tmix_maa_dim=state_dict['blocks.0.att.time_maa_w2'].shape[1],
+            tmix_decay_dim=state_dict['blocks.0.att.time_decay_w1'].shape[1],
+            
             **kwargs
         )
         

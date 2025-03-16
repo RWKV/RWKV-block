@@ -1,10 +1,8 @@
 # ---
-# Collection of optimized operations used within the RWKV v5 implementation.
-#
-# NOTE: That v5 and v6 RWKV chunk operation are compatible, but uses different args
+# Collection of optimized operations used within the RWKV v5/v6 implementation.
 # ---
 
-import torch
+import torch, sys, importlib
 import torch.nn.functional as F
 from torch import Tensor
 
@@ -18,11 +16,26 @@ def modified_lerp(start_mul, start, weight):
     '''
     return start_mul * start + weight * (1 - start)
 
+def has_python_package(name):
+    '''
+    Checks if a package is installed and importable
+    '''
+    if name in sys.modules:
+        return True
+    if importlib.util.find_spec(name) is not None:
+        return True
+    return False
+
+# Check for triton and fla packages
+# _has_triton = has_python_package("triton")
+_has_fla = has_python_package("fla")
+_has_cuda = torch.cuda.is_available()
+
 # ---
-# RWKVx050_chunk implementation, with support for different backends
+# RWKVx060_chunk implementation, with support for different backends
 # ---
 
-def RWKVx050_chunk(
+def RWKVx060_chunk(
         # Inbound request tensors
         r:Tensor,k:Tensor,v:Tensor,w:Tensor,u:Tensor,wkv_state:Tensor,
         # Operator backend type to use
@@ -34,19 +47,37 @@ def RWKVx050_chunk(
     '''
     if backend == 'auto':
         if r.device.type == 'cpu' or r.device.type == 'mps':
-            backend = 'torch'
-        else:
+            backend = 'pytorch'
+        elif _has_fla == True:
             backend = 'fla'
+        else:
+            backend = 'pytorch'
 
-    if backend == 'fla':
-        x, s = RWKVx050_chunk_fla(r.float(),k.float(),v.float(),w.float(),u.float(),wkv_state.float())
-        return x.bfloat16(), s.bfloat16()
-    elif backend == 'torch':
-        return RWKVx050_chunk_torch(r,k,v,w,u,wkv_state)
+    # Set the default device, if not pytorch
+    # this mitigates with mismatched default device issues
+    # known to occur with triton, fla, and cuda
+    # 
+    # This unfortunately will not work with single thread
+    # multi-gpu setups. Sadly
+    if backend == "pytorch" or backend == "torch":
+        pass
     else:
-        raise ValueError(f"Unsupported backend type: {backend}")
+        device = r.device
+        if torch.get_default_device() != device:
+            torch.set_default_device(device)
+            torch.cuda.set_device(device)
 
-def RWKVx050_reshape_run(
+    # Reshape the tensors to the correct format
+    with torch.device(device):
+        if backend == 'fla':
+            x, s = RWKVx060_chunk_fla(r.float(),k.float(),v.float(),w.float(),u.float(),wkv_state.float())
+            return x.bfloat16(), s.bfloat16()
+        elif backend == "pytorch" or backend == "torch":
+            return RWKVx060_chunk_torch(r,k,v,w,u,wkv_state)
+        else:
+            raise ValueError(f"Unsupported backend type: {backend}")
+
+def RWKVx060_reshape_run(
         # Request shapes
         B:int, T:int, C:int, H:int, K:int,
         # Inbound request tensors
@@ -60,37 +91,54 @@ def RWKVx050_reshape_run(
     (with the B, T, C, H values: Batch size, token/time, C, H)
     '''
     if backend == 'auto':
-        # Default to torch, as fla has issues with backprop
-        backend = 'torch'
-        # if r.device.type == 'cpu' or r.device.type == 'mps':
-        #     backend = 'torch'
-        # else:
-        #     backend = 'fla'
+        if r.device.type == 'cpu' or r.device.type == 'mps':
+            backend = 'pytorch'
+        elif _has_fla == True:
+            backend = 'fla'
+        else:
+            backend = 'pytorch'
 
-    if backend == 'fla':
-        r = r.view(B,T,H,-1).transpose(1,2).float()
-        k = k.view(B,T,H,-1).transpose(1,2).float()
-        v = v.view(B,T,H,-1).transpose(1,2).float()
-        w = -torch.exp(w.view(B,T,H,-1).transpose(1,2).float())
-        o, out_wkv_state = RWKVx050_chunk_fla(r, k, v, w, u=u.float(), wkv_state=in_wkv_state.float(), scale=1, output_final_state=True)
-        return o.bfloat16().transpose(1,2).reshape(B,T,C), out_wkv_state.bfloat16()
-    elif backend == 'torch':
-        u = u.view(1,H,1,K).to(r.dtype)
-        r = r.view(B,T,H,K).transpose(1,2)
-        k = k.view(B,T,H,K).transpose(1,2)
-        v = v.view(B,T,H,K).transpose(1,2)
-        w = -torch.exp(w.view(B,T,H,K).transpose(1,2))
-        o, out_wkv_state = RWKVx050_chunk_torch(r, k, v, w, u, in_wkv_state)
-        return o.transpose(1,2).reshape(B,T,C), out_wkv_state
+    # Set the default device, if not pytorch
+    # this mitigates with mismatched default device issues
+    # known to occur with triton, fla, and cuda
+    # 
+    # This unfortunately will not work with single thread
+    # multi-gpu setups. Sadly
+    if backend == "pytorch" or backend == "torch":
+        pass
     else:
-        raise ValueError(f"Unsupported backend type: {backend}")
+        device = r.device
+        if torch.get_default_device() != device:
+            torch.set_default_device(device)
+            torch.cuda.set_device(device)
+
+    # Reshape the tensors to the correct format
+    with torch.device(device):
+        # Reshape the tensors to the correct format, for the respective backend
+        if backend == 'fla':
+            r = r.view(B,T,H,-1).transpose(1,2).float()
+            k = k.view(B,T,H,-1).transpose(1,2).float()
+            v = v.view(B,T,H,-1).transpose(1,2).float()
+            w = -torch.exp(w.view(B,T,H,-1).transpose(1,2).float())
+            o, out_wkv_state = RWKVx060_chunk_fla(r, k, v, w, u=u.float(), wkv_state=in_wkv_state.float(), scale=1, output_final_state=True)
+            return o.bfloat16().transpose(1,2).reshape(B,T,C), out_wkv_state.bfloat16()
+        elif backend == 'pytorch' or backend == 'torch':
+            u = u.view(1,H,1,K).to(r.dtype)
+            r = r.view(B,T,H,K).transpose(1,2)
+            k = k.view(B,T,H,K).transpose(1,2)
+            v = v.view(B,T,H,K).transpose(1,2)
+            w = -torch.exp(w.view(B,T,H,K).transpose(1,2))
+            o, out_wkv_state = RWKVx060_chunk_torch(r, k, v, w, u, in_wkv_state)
+            return o.transpose(1,2).reshape(B,T,C), out_wkv_state
+        else:
+            raise ValueError(f"Unsupported backend type: {backend}")
 
 
 # ---
-# RWKVx050_chunk pytorch backend
+# RWKVx060_chunk pytorch backend
 # ---
 
-def RWKVx050_chunk_torch(
+def RWKVx060_chunk_torch(
         # Inbound request tensors
         r:Tensor,k:Tensor,v:Tensor,w:Tensor,u:Tensor,wkv_state:Tensor
     )->tuple[Tensor,Tensor]:
@@ -135,7 +183,7 @@ def RWKVx050_chunk_torch(
             chunk_len = bChunkSize * mul
 
             # Call the subchunk operation
-            out, nxt_wkv_state = RWKVx050_subchunk_torch(
+            out, nxt_wkv_state = RWKVx060_subchunk_torch(
                 r[:, :, processed_len:processed_len+chunk_len, :],
                 k[:, :, processed_len:processed_len+chunk_len, :],
                 v[:, :, processed_len:processed_len+chunk_len, :],
@@ -156,7 +204,7 @@ def RWKVx050_chunk_torch(
     out = torch.cat(out_arr, dim=2)
     return out, nxt_wkv_state
 
-def RWKVx050_subchunk_torch(
+def RWKVx060_subchunk_torch(
         # Inbound request tensors
         r:Tensor,k:Tensor,v:Tensor,w:Tensor,u:Tensor,wkv_state:Tensor,
         # Chunk size and precision
@@ -171,9 +219,9 @@ def RWKVx050_subchunk_torch(
     And that the chunk length needs to be a multiple of 2
     '''
     B,H,L,K = k.size()
-    return RWKVx050_subchunk_torch_inner(B,H,L,K, r,k,v,w,u,wkv_state,chunk_len,precision)
+    return RWKVx060_subchunk_torch_inner(B,H,L,K, r,k,v,w,u,wkv_state,chunk_len,precision)
 
-def RWKVx050_subchunk_torch_inner(
+def RWKVx060_subchunk_torch_inner(
         # Inbound request shapes
         B:int,H:int,L:int,K:int, 
         # Inbound request tensors
@@ -308,15 +356,15 @@ def RWKVx050_subchunk_torch_inner(
         return out, wkv_state
 
 # ---
-# RWKVx050_chunk FLA backend
+# RWKVx060_chunk FLA backend
 # ---
 
 # The empty fla_chunk_rwkv6 operator cache
-global _RWKVx050_chunk_fla_operator
-_RWKVx050_chunk_fla_operator = None
+global _RWKVx060_chunk_fla_operator
+_RWKVx060_chunk_fla_operator = None
 
 @torch.compiler.disable
-def RWKVx050_chunk_fla(
+def RWKVx060_chunk_fla(
         # Inbound request tensors
         r:Tensor,k:Tensor,v:Tensor,w:Tensor,u:Tensor,wkv_state:Tensor,
         # Optional parameters
@@ -326,9 +374,9 @@ def RWKVx050_chunk_fla(
     Run the RWKVx060 chunk operation.
     Note this is currently not pytorch compiler friendly sadly
     '''
-    global _RWKVx050_chunk_fla_operator
-    if _RWKVx050_chunk_fla_operator is None:
+    global _RWKVx060_chunk_fla_operator
+    if _RWKVx060_chunk_fla_operator is None:
         from fla.ops.rwkv6 import chunk_rwkv6
-        _RWKVx050_chunk_fla_operator = chunk_rwkv6
+        _RWKVx060_chunk_fla_operator = chunk_rwkv6
 
-    return _RWKVx050_chunk_fla_operator(r, k, v, w, u=u, scale=scale, initial_state=wkv_state, output_final_state=output_final_state)
+    return _RWKVx060_chunk_fla_operator(r, k, v, w, u=u, scale=scale, initial_state=wkv_state, output_final_state=output_final_state)
