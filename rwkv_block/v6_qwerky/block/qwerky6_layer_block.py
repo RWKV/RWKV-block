@@ -3,7 +3,6 @@ from torch import nn
 from torch.nn import functional as F
 from typing import Union, Tuple
 
-from ...v6_finch.block.rwkv6_layer_block import RWKV6LayerBlock
 from ...v6_finch.block.rwkv6_block_config_map import RWKV6BlockConfigMap
 from .qwerky6_time_mix import Qwerky6TimeMix
 from .qwerky6_block_config_map import Qwerky6BlockConfigMap

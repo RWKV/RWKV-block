@@ -4,11 +4,11 @@ from typing import Optional, Union, Tuple
 from torch.nn import functional as F
 from torch import nn
 
+from transformers.models.qwen2.modeling_qwen2 import repeat_kv
 from transformers.models.qwen2.modeling_qwen2 import apply_rotary_pos_emb
 
 from rwkv_block.v5_eagle.block.rwkv5_optimized_ops import RWKVx060_reshape_run
 
-from ...v6_finch.block.rwkv6_time_mix import RWKV6TimeMix, _run_tmix_backend, _has_fla, _has_triton, _has_cuda
 from .qwerky6_block_config_map import Qwerky6BlockConfigMap
 from fla.ops.gla import fused_recurrent_gla
 class Qwerky6TimeMix(torch.nn.Module):
@@ -73,29 +73,28 @@ class Qwerky6TimeMix(torch.nn.Module):
             D_DECAY_LORA = 128
 
             
-            self.x_r = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.x_w = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.x_k = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.x_v = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.x_a = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.x_g = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.x_x = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maaa_r = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maaa_w = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maaa_k = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maaa_v = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maaa_a = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maaa_g = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maaa_x = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
             
-            self.x_w2 = nn.Parameter(torch.empty(5, D_MIX_LORA, hidden_size, device=device, dtype=dtype))
-            self.x_w1 = nn.Parameter(torch.empty(hidden_size, D_MIX_LORA * self.x_w2.size(0), device=device, dtype=dtype))
+            self.time_maaa_w2 = nn.Parameter(torch.empty(5, D_MIX_LORA, hidden_size, device=device, dtype=dtype))
+            self.time_maaa_w1 = nn.Parameter(torch.empty(hidden_size, D_MIX_LORA * self.x_w2.size(0), device=device, dtype=dtype))
 
-            self.w_w0 = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.w_w1 = nn.Parameter(torch.empty(hidden_size, D_DECAY_LORA, device=device, dtype=dtype))
-            self.w_w2 = nn.Parameter(torch.empty(D_DECAY_LORA, hidden_size, device=device, dtype=dtype))
+            self.time_decay = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_decay_w1 = nn.Parameter(torch.empty(hidden_size, D_DECAY_LORA, device=device, dtype=dtype))
+            self.time_decay_w2 = nn.Parameter(torch.empty(D_DECAY_LORA, hidden_size, device=device, dtype=dtype))
 
         # Renamed to q,k,v,o_proj : in line with transformers naming
         self.q_proj = nn.Linear(hidden_size, hidden_size, bias=True, device=device, dtype=dtype)
         self.k_proj = nn.Linear(hidden_size, hidden_size_att, bias=True, device=device, dtype=dtype)
         self.v_proj = nn.Linear(hidden_size, hidden_size_att, bias=True, device=device, dtype=dtype)
         self.o_proj = nn.Linear(hidden_size, hidden_size, bias=False, device=device, dtype=dtype)
-        self.g_proj = nn.Linear(hidden_size, hidden_size, bias=False, device=device, dtype=dtype)
+        self.gate = nn.Linear(hidden_size, hidden_size, bias=False, device=device, dtype=dtype)
 
-        self.ln_x = nn.GroupNorm(n_head, hidden_size, device=device, dtype=dtype, eps=(1e-5)*head_size)
         
     def reset_parameters(self):
         '''
@@ -127,11 +126,11 @@ class Qwerky6TimeMix(torch.nn.Module):
             for i in range(hidden_size):
                 ddd[0, 0, i] = i / hidden_size
 
-            self.x_r.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
-            self.x_w.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
-            self.x_k.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
-            self.x_v.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
-            self.x_a.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
+            self.time_maaa_r.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
+            self.time_maaa_w.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
+            self.time_maaa_k.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
+            self.time_maaa_v.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
+            self.time_maaa_a.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
 
             # idk what goes here TODO
 
@@ -186,27 +185,51 @@ class Qwerky6TimeMix(torch.nn.Module):
         xxx = torch.bmm(xxx, self.x_w2).view(5, BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE)
 
         mw, mk, mv, mr, mg = xxx.unbind(dim=0)
-        xw = x + dxprev * (self.w_w + mw)
-        xk = x + dxprev * (self.w_k + mk)
-        xv = x + dxprev * (self.w_v + mv)
-        xr = x + dxprev * (self.w_r + mr)
-        xg = x + dxprev * (self.w_g + mg)
+        xw = x + dxprev * (self.time_maaa_w + mw)
+        xk = x + dxprev * (self.time_maaa_k + mk)
+        xv = x + dxprev * (self.time_maaa_v + mv)
+        xr = x + dxprev * (self.time_maaa_r + mr)
+        xg = x + dxprev * (self.time_maaa_g + mg)
+        decay_states = (
+            self.time_decay +
+            torch.tanh(xw @ self.time_decay_w1) @ self.time_decay_w2)
 
         r = self.q_proj(xr)
         k = self.k_proj(xk)
         v = self.v_proj(xv)
-        g = F.silu(self.g_proj(xg))
+        g = (self.gate(xg))
 
-        w = (self.w_w0 + torch.tanh(xw @ self.w_w1) @ self.w_w2).to(r.dtype)
+        gate_states = F.sigmoid(g)
 
-        x, wkv_state_out = fused_recurrent_gla(
-            r, k, v, w.float(),
-            None, None, wkv_state_in, True)
-        x = x.view(BATCH_SIZE * SEQ_LEN, IN_EMB_SIZE)
+        query_states = r.view(BATCH_SIZE, SEQ_LEN, -1,
+                                         self.head_size).transpose(1, 2)
+        key_states = k.view(BATCH_SIZE, SEQ_LEN, -1,
+                                     self.head_size).transpose(1, 2)
+        value_states = v.view(BATCH_SIZE, SEQ_LEN, -1,
+                                         self.head_size).transpose(1, 2)
+        decay_states = decay_states.view(BATCH_SIZE, SEQ_LEN, -1,
+                                         self.head_size).transpose(1, 2)
 
-        x = self.o_proj(x * g)
+        # repeat k/v heads if n_kv_heads < n_heads
+        key_states = repeat_kv(key_states, self.num_key_value_groups)
+        value_states = repeat_kv(value_states, self.num_key_value_groups)
 
-        return x, shift_state_out, wkv_state_out
+        decay_states_log = -decay_states.float().exp()
+        decay_states_log = decay_states_log.clamp(-5)
+        key_states = (key_states * (1 - decay_states_log.exp()))
+
+        query_states = query_states.to(torch.bfloat16)
+        key_states = key_states.to(torch.bfloat16)
+        value_states = value_states.to(torch.bfloat16)
+
+        output_final_state = True
+        attn_output, output_kv_state = fused_recurrent_gla(
+            query_states, key_states, value_states, decay_states_log.float(),
+            None, None, wkv_state_in, output_final_state)
+
+        x = self.o_proj(attn_output * gate_states)
+
+        return x, shift_state_out, output_kv_state
     
     @torch.compile(mode="default")
     def forward_with_default_compile(self, in_x:Tensor, wkv_state_in:Tensor,shift_state_in:Tensor, out_x:Tensor, wkv_state_out:Tensor, shift_state_out:Tensor, position_embeddings: Tuple[torch.Tensor, torch.Tensor]=None) -> tuple[Tensor,Tensor,Tensor]:
