@@ -1,0 +1,8 @@
+# Std hidden files
+.*
+__*__
+**/wandb/**
+
+# Add back .gitignore
+!.gitignore
+!.git*
