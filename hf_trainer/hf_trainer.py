@@ -73,6 +73,18 @@ def parse_args():
         help="Enable debug mode (more verbose logging)"
     )
     
+    parser.add_argument(
+        "--train_wkv_state",
+        action="store_true",
+        help="Train only WKV state (automatically sets freeze_full_weights=True and init_wkv_state=True)"
+    )
+    
+    parser.add_argument(
+        "--save_full_weights",
+        action="store_true",
+        help="Save all model weights instead of only trainable weights"
+    )
+    
     return parser.parse_args()
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -147,6 +159,20 @@ def main():
         # Override with command-line arguments
         config = override_config_with_args(config, args)
         
+        # Handle WKV state training mode
+        if args.train_wkv_state:
+            if "model" not in config:
+                config["model"] = {}
+            config["model"]["freeze_full_weights"] = True
+            config["model"]["init_wkv_state"] = True
+            logger.info("WKV state training mode enabled: Setting freeze_full_weights=True and init_wkv_state=True")
+        
+        # Log save mode
+        if args.save_full_weights:
+            logger.info("Full weights saving mode enabled: All model weights will be saved in checkpoints")
+        else:
+            logger.info("Trainable weights saving mode enabled: Only trainable weights will be saved in checkpoints")
+        
         # Validate configuration
         validate_config(config)
         
@@ -185,7 +211,8 @@ def main():
             tokenizer=tokenizer,
             dataset=dataset,
             config=config,
-            resume_from=args.resume_from_checkpoint
+            resume_from=args.resume_from_checkpoint,
+            save_full_weights=args.save_full_weights
         )
         
         logger.info("Training completed successfully!")

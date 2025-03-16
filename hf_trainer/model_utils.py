@@ -93,7 +93,8 @@ def save_model_checkpoint(
     output_dir: str,
     step: Optional[int] = None,
     epoch: Optional[int] = None,
-    is_final: bool = False
+    is_final: bool = False,
+    save_full_weights: bool = False
 ) -> str:
     """
     Save a model checkpoint.
@@ -105,6 +106,7 @@ def save_model_checkpoint(
         step: Current training step (optional)
         epoch: Current epoch (optional)
         is_final: Whether this is the final checkpoint
+        save_full_weights: Whether to save all weights or only trainable weights (default: False)
         
     Returns:
         Path to the saved checkpoint
@@ -122,10 +124,24 @@ def save_model_checkpoint(
     # Create directory if it doesn't exist
     os.makedirs(checkpoint_dir, exist_ok=True)
     
-    logger.info(f"Saving model checkpoint to {checkpoint_dir}")
+    if save_full_weights:
+        logger.info(f"Saving full model weights to {checkpoint_dir}")
+        # Save all weights
+        model.save_pretrained(checkpoint_dir)
+    else:
+        # Save only trainable weights
+        trainable_state_dict = {
+            k: v for k, v in model.state_dict().items()
+            if v.requires_grad or k.startswith("init_state.")  # Always save init_state parameters
+        }
+        
+        # Count parameters
+        total_params = len(model.state_dict())
+        trainable_params = len(trainable_state_dict)
+        
+        logger.info(f"Saving trainable weights to {checkpoint_dir} ({trainable_params}/{total_params} parameters)")
+        model.save_pretrained(checkpoint_dir, state_dict=trainable_state_dict)
     
-    # Save model and tokenizer
-    model.save_pretrained(checkpoint_dir)
     tokenizer.save_pretrained(checkpoint_dir)
     
     return checkpoint_dir

@@ -136,7 +136,8 @@ def train_model(
     tokenizer: PreTrainedTokenizer,
     dataset: TextDatasetStreamer,
     config: Dict[str, Any],
-    resume_from: Optional[str] = None
+    resume_from: Optional[str] = None,
+    save_full_weights: bool = False
 ) -> PreTrainedModel:
     """
     Train a model using the provided dataset and configuration.
@@ -147,6 +148,7 @@ def train_model(
         dataset: TextDatasetStreamer instance
         config: Configuration dictionary
         resume_from: Path to a checkpoint to resume from (optional)
+        save_full_weights: Whether to save all weights or only trainable weights (default: False)
         
     Returns:
         Trained model
@@ -321,7 +323,8 @@ def train_model(
                 model=model,
                 tokenizer=tokenizer,
                 output_dir=output_dir,
-                step=completed_steps
+                step=completed_steps,
+                save_full_weights=save_full_weights
             )
             
             # Save optimizer and scheduler states
@@ -356,7 +359,8 @@ def train_model(
         model=model,
         tokenizer=tokenizer,
         output_dir=output_dir,
-        is_final=True
+        is_final=True,
+        save_full_weights=save_full_weights
     )
     
     # Save optimizer and scheduler states
