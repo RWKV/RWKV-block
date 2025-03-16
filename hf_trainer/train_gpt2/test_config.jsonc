@@ -2,7 +2,7 @@
   // Model configuration
   "model": {
     "hf_model_path": "gpt2",  // Small GPT2 model
-    "use_bf16": false,  // Disable BF16 for GPT2 training
+    "use_amp_bf16": false,  // Disable BF16 for GPT2 training
     
     // Model-specific arguments
     "model_args": {
