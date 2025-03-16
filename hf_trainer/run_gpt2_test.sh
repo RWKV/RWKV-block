@@ -8,7 +8,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
 
 # Get the path to the test configuration
-CONFIG_PATH="$PROJECT_ROOT/test/hf_trainer/test_config.jsonc"
+CONFIG_PATH="$PROJECT_ROOT/test/hf_trainer/train_gpt2/test_config.jsonc"
 
 # Create a temporary output directory
 OUTPUT_DIR="$PROJECT_ROOT/test/hf_trainer/test_output"

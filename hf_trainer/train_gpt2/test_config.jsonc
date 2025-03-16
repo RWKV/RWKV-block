@@ -2,10 +2,7 @@
   // Model configuration
   "model": {
     "hf_model_path": "gpt2",  // Small GPT2 model
-    "use_bf16": false,  // Disable BF16 for CPU training
-    "load_in_8bit": false,
-    "load_in_4bit": false,
-    "force_cpu": true,  // Force CPU usage even if CUDA is available
+    "use_bf16": false,  // Disable BF16 for GPT2 training
     
     // Model-specific arguments
     "model_args": {
@@ -17,10 +14,9 @@
   "training": {
     "learning_rate": 5e-5,
     "weight_decay": 0.01,
-    "num_train_epochs": 1,  // Just one epoch for testing
     "gradient_accumulation_steps": 2,
     "warmup_steps": 10,
-    "max_steps": 20,  // Limited steps for testing
+    "training_steps": 20,  // Limited steps for testing
     "save_steps": 10,
     "save_total_limit": 1,
     "logging_steps": 5,
@@ -66,8 +62,5 @@
     "wandb": {
       "enabled": false
     }
-  },
-  
-  // Estimated dataset size (used to calculate number of steps)
-  "estimated_dataset_size": 10000
+  }
 }
