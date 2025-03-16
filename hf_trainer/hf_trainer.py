@@ -85,6 +85,13 @@ def parse_args():
         help="Save all model weights instead of only trainable weights"
     )
     
+    parser.add_argument(
+        "--hf_model_path",
+        type=str,
+        default=None,
+        help="Path to the Hugging Face model (overrides config file)"
+    )
+    
     return parser.parse_args()
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -140,6 +147,12 @@ def override_config_with_args(config: Dict[str, Any], args) -> Dict[str, Any]:
     if args.no_wandb and "logging" in updated_config and "wandb" in updated_config["logging"]:
         updated_config["logging"]["wandb"]["enabled"] = False
     
+    # Override model path if specified
+    if args.hf_model_path:
+        if "model" not in updated_config:
+            updated_config["model"] = {}
+        updated_config["model"]["hf_model_path"] = args.hf_model_path
+    
     return updated_config
 
 def main():
@@ -172,6 +185,10 @@ def main():
             logger.info("Full weights saving mode enabled: All model weights will be saved in checkpoints")
         else:
             logger.info("Trainable weights saving mode enabled: Only trainable weights will be saved in checkpoints")
+        
+        # Log model path override if specified
+        if args.hf_model_path:
+            logger.info(f"Model path override: Using model from {args.hf_model_path}")
         
         # Validate configuration
         validate_config(config)
