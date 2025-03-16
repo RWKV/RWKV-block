@@ -16,12 +16,8 @@
 
   // Training configuration
   "training": {
-    "learning_rate": 5e-5,
-    "weight_decay": 0.01,
-    "num_train_epochs": 3,
     "gradient_accumulation_steps": 4,
-    "warmup_steps": 500,
-    "max_steps": -1,  // -1 means train for num_train_epochs
+    "training_steps": 10000,  // Total number of training steps
     "save_steps": 1000,
     "save_total_limit": 3,
     "logging_steps": 100,
@@ -29,18 +25,17 @@
     "output_dir": "./output"
   },
 
-  // Optimizer configuration
+  // Optimizer and scheduler configuration
   "optimizer": {
     "name": "adamw",  // Options: adamw, adafactor, sgd, adam
+    "max_learning_rate": 5e-5,  // Learning rate after warmup
+    "min_learning_rate": 1e-6,  // Final learning rate after cosine decay
+    "warmup_steps": 500,  // Number of warmup steps
+    "scheduler": "cosine",  // Options: linear, cosine, constant, constant_with_warmup
+    "weight_decay": 0.01,
     "beta1": 0.9,
     "beta2": 0.999,
     "epsilon": 1e-8
-  },
-
-  // Scheduler configuration
-  "scheduler": {
-    "name": "cosine",  // Options: linear, cosine, constant, constant_with_warmup
-    "num_warmup_steps": 500
   },
 
   // Dataset configuration (using TextDatasetStreamer)
@@ -79,8 +74,5 @@
       "entity": null,  // Your W&B username or team name
       "tags": ["gpt2", "finetune"]
     }
-  },
-  
-  // Estimated dataset size (used to calculate number of steps)
-  "estimated_dataset_size": 1000000
+  }
 }

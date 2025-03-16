@@ -40,12 +40,8 @@ def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
         processed_config["training"] = {}
     
     training_config = processed_config["training"]
-    training_config.setdefault("learning_rate", 5e-5)
-    training_config.setdefault("weight_decay", 0.01)
-    training_config.setdefault("num_train_epochs", 3)
     training_config.setdefault("gradient_accumulation_steps", 4)
-    training_config.setdefault("warmup_steps", 500)
-    training_config.setdefault("max_steps", -1)  # -1 means train for num_train_epochs
+    training_config.setdefault("training_steps", 10000)  # Total number of training steps
     training_config.setdefault("save_steps", 1000)
     training_config.setdefault("save_total_limit", 3)
     training_config.setdefault("logging_steps", 100)
@@ -58,17 +54,14 @@ def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
     
     optimizer_config = processed_config["optimizer"]
     optimizer_config.setdefault("name", "adamw")
+    optimizer_config.setdefault("max_learning_rate", 5e-5)
+    optimizer_config.setdefault("min_learning_rate", 1e-6)
+    optimizer_config.setdefault("warmup_steps", 500)
+    optimizer_config.setdefault("scheduler", "cosine")
+    optimizer_config.setdefault("weight_decay", 0.01)
     optimizer_config.setdefault("beta1", 0.9)
     optimizer_config.setdefault("beta2", 0.999)
     optimizer_config.setdefault("epsilon", 1e-8)
-    
-    # Apply defaults for scheduler configuration
-    if "scheduler" not in processed_config:
-        processed_config["scheduler"] = {}
-    
-    scheduler_config = processed_config["scheduler"]
-    scheduler_config.setdefault("name", "cosine")
-    scheduler_config.setdefault("num_warmup_steps", 500)
     
     # Apply defaults for dataset configuration
     if "dataset" not in processed_config:
@@ -119,11 +112,8 @@ def validate_config(config: Dict[str, Any]) -> None:
         raise ValueError("Training configuration is missing")
     
     training_config = config["training"]
-    if training_config.get("learning_rate", 0) <= 0:
-        raise ValueError("Learning rate must be positive")
-    
-    if training_config.get("num_train_epochs", 0) <= 0 and training_config.get("max_steps", -1) <= 0:
-        raise ValueError("Either num_train_epochs or max_steps must be positive")
+    if training_config.get("training_steps", 0) <= 0:
+        raise ValueError("training_steps must be positive")
     
     # Validate dataset configuration
     if "dataset" not in config:
@@ -137,19 +127,19 @@ def validate_config(config: Dict[str, Any]) -> None:
         if "hf_path" not in ds_config:
             raise ValueError(f"Dataset {i} is missing hf_path")
     
-    # Validate optimizer configuration
+    # Validate optimizer and scheduler configuration
     if "optimizer" in config:
         optimizer_config = config["optimizer"]
         valid_optimizers = ["adamw", "adafactor", "sgd", "adam"]
         if optimizer_config.get("name") not in valid_optimizers:
             raise ValueError(f"Invalid optimizer: {optimizer_config.get('name')}. Valid options are: {', '.join(valid_optimizers)}")
-    
-    # Validate scheduler configuration
-    if "scheduler" in config:
-        scheduler_config = config["scheduler"]
+        
         valid_schedulers = ["linear", "cosine", "constant", "constant_with_warmup"]
-        if scheduler_config.get("name") not in valid_schedulers:
-            raise ValueError(f"Invalid scheduler: {scheduler_config.get('name')}. Valid options are: {', '.join(valid_schedulers)}")
+        if optimizer_config.get("scheduler") not in valid_schedulers:
+            raise ValueError(f"Invalid scheduler: {optimizer_config.get('scheduler')}. Valid options are: {', '.join(valid_schedulers)}")
+        
+        if optimizer_config.get("max_learning_rate", 0) <= 0:
+            raise ValueError("max_learning_rate must be positive")
     
     # Validate logging configuration
     if "logging" in config and "wandb" in config["logging"]:

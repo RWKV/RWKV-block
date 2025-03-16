@@ -46,8 +46,8 @@ def create_optimizer(
     params_to_optimize = [p for p in model.parameters() if p.requires_grad]
     
     # Get optimizer hyperparameters
-    lr = config["training"].get("learning_rate", 5e-5)
-    weight_decay = config["training"].get("weight_decay", 0.01)
+    lr = optimizer_config.get("max_learning_rate", 5e-5)
+    weight_decay = optimizer_config.get("weight_decay", 0.01)
     
     if optimizer_name == "adamw":
         beta1 = optimizer_config.get("beta1", 0.9)
@@ -112,22 +112,39 @@ def create_scheduler(
     Returns:
         Scheduler instance or None if not configured
     """
-    scheduler_config = config.get("scheduler", {})
-    scheduler_name = scheduler_config.get("name", "cosine").lower()
+    optimizer_config = config.get("optimizer", {})
+    scheduler_name = optimizer_config.get("scheduler", "cosine").lower()
     
     # Get warmup steps
-    num_warmup_steps = scheduler_config.get(
-        "num_warmup_steps", 
-        config["training"].get("warmup_steps", 0)
-    )
+    num_warmup_steps = optimizer_config.get("warmup_steps", 500)
+    
+    # Get min learning rate for cosine scheduler
+    min_lr = optimizer_config.get("min_learning_rate", 1e-6)
+    max_lr = optimizer_config.get("max_learning_rate", 5e-5)
     
     # Create scheduler
-    scheduler = get_scheduler(
-        name=scheduler_name,
-        optimizer=optimizer,
-        num_warmup_steps=num_warmup_steps,
-        num_training_steps=num_training_steps
-    )
+    if scheduler_name == "cosine":
+        # For cosine scheduler with min_lr, we'll use a custom lambda function
+        from torch.optim.lr_scheduler import LambdaLR
+        
+        def lr_lambda(current_step: int):
+            # Warmup phase
+            if current_step < num_warmup_steps:
+                return float(current_step) / float(max(1, num_warmup_steps))
+            
+            # Cosine decay phase
+            progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+            return max(min_lr / max_lr, 0.5 * (1.0 + math.cos(math.pi * progress)))
+        
+        scheduler = LambdaLR(optimizer, lr_lambda)
+    else:
+        # For other schedulers, use the HF get_scheduler function
+        scheduler = get_scheduler(
+            name=scheduler_name,
+            optimizer=optimizer,
+            num_warmup_steps=num_warmup_steps,
+            num_training_steps=num_training_steps
+        )
     
     return scheduler
 
@@ -157,10 +174,9 @@ def train_model(
     training_config = config["training"]
     
     # Set up training parameters
-    num_train_epochs = training_config.get("num_train_epochs", 3)
-    max_steps = training_config.get("max_steps", -1)
     gradient_accumulation_steps = training_config.get("gradient_accumulation_steps", 4)
     microbatch_size = training_config.get("microbatch_size", 1)
+    training_steps = training_config.get("training_steps", 10000)
     
     # Set up logging and checkpointing parameters
     logging_steps = training_config.get("logging_steps", 100)
@@ -180,19 +196,12 @@ def train_model(
         except ImportError:
             logger.warning("W&B logging enabled but wandb not installed")
     
-    # Calculate total training steps
+    # Set total training steps
+    num_training_steps = training_steps
+    
+    # Calculate effective batch size
     packing_batch_size = config["dataset"].get("packing_batch_size", 8)
     total_batch_size = packing_batch_size * gradient_accumulation_steps
-    
-    if max_steps > 0:
-        num_training_steps = max_steps
-    else:
-        # For streaming datasets, we need to estimate the number of steps
-        # based on the number of epochs and an estimate of dataset size
-        estimated_dataset_size = config.get("estimated_dataset_size", 1000000)
-        num_training_steps = math.ceil(
-            estimated_dataset_size * num_train_epochs / total_batch_size
-        )
     
     logger.info(f"Total training steps: {num_training_steps}")
     logger.info(f"Gradient accumulation steps: {gradient_accumulation_steps}")
