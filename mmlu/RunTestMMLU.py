@@ -1,6 +1,13 @@
 import concurrent.futures
 import os, math, torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
+try:
+    from tqdm import tqdm
+except ImportError:
+    # If tqdm is not installed, create a simple replacement
+    def tqdm(iterable, **kwargs):
+        print(f"Progress bar disabled: tqdm not installed. Install with 'pip install tqdm'")
+        return iterable
 
 # https://stackoverflow.com/a/28151907
 if __name__ == "__main__":
@@ -40,8 +47,8 @@ def mmlu_test_runner(
     overall_accuracy_list = []
     overall_probability_list = []
 
-    # Loop through the subjects
-    for subject in subject_keys:
+    # Loop through the subjects with progress bar
+    for subject in tqdm(subject_keys, desc="MMLU Subjects", position=0, leave=True):
         # Get the subject data
         subject_data = mmlu_dataset[subject]
 
@@ -57,8 +64,8 @@ def mmlu_test_runner(
         answer_prob_list = []
         answer_match_list = []
 
-        # Loop through the batches
-        for batch_index in range(num_batches):
+        # Loop through the batches with progress bar
+        for batch_index in tqdm(range(num_batches), desc=f"Testing {subject}", ncols=100, position=1, leave=False):
             # start and endin position
             start = batch_index * batch_size
             endin = min(start + batch_size, subject_data_count)
