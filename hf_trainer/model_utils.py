@@ -24,8 +24,8 @@ def load_model_and_tokenizer(
     Returns:
         Tuple of (model, tokenizer)
     """
-    name_or_path = model_config["name_or_path"]
-    logger.info(f"Loading model and tokenizer from {name_or_path}")
+    hf_model_path = model_config["hf_model_path"]
+    logger.info(f"Loading model and tokenizer from {hf_model_path}")
     
     # Extract model-specific arguments
     model_args = model_config.get("model_args", {})
@@ -39,7 +39,7 @@ def load_model_and_tokenizer(
     torch_dtype = torch.bfloat16 if use_bf16 else torch.float32
     
     # Load tokenizer first
-    tokenizer = AutoTokenizer.from_pretrained(name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(hf_model_path)
     
     # Ensure the tokenizer has padding token
     if tokenizer.pad_token is None:
@@ -63,7 +63,7 @@ def load_model_and_tokenizer(
     
     # Load the model
     model = AutoModelForCausalLM.from_pretrained(
-        name_or_path,
+        hf_model_path,
         **model_load_args
     )
     
@@ -164,7 +164,7 @@ def load_checkpoint(
     
     # Update the model path in the config
     updated_config = model_config.copy()
-    updated_config["name_or_path"] = checkpoint_path
+    updated_config["hf_model_path"] = checkpoint_path
     
     # Load model and tokenizer
     return load_model_and_tokenizer(updated_config)

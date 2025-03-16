@@ -26,7 +26,7 @@ def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
         processed_config["model"] = {}
     
     model_config = processed_config["model"]
-    model_config.setdefault("name_or_path", "gpt2")
+    model_config.setdefault("hf_model_path", "gpt2")
     model_config.setdefault("use_bf16", True)
     model_config.setdefault("load_in_8bit", False)
     model_config.setdefault("load_in_4bit", False)
@@ -111,7 +111,7 @@ def validate_config(config: Dict[str, Any]) -> None:
         raise ValueError("Model configuration is missing")
     
     model_config = config["model"]
-    if "name_or_path" not in model_config:
+    if "hf_model_path" not in model_config:
         raise ValueError("Model name or path is missing")
     
     # Validate training configuration

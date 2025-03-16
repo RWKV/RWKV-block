@@ -43,7 +43,7 @@ The configuration file uses JSONC format (JSON with Comments). The hjson library
 
 ```hjson
 "model": {
-  "name_or_path": "gpt2",  // HF model name or local path
+  "hf_model_path": "gpt2",  // HF model name or local path
   "use_bf16": true,
   "load_in_8bit": false,
   "load_in_4bit": false,
