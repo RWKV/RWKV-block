@@ -85,6 +85,19 @@ def load_model_and_tokenizer(
     logger.info(f"Tokenizer loaded: {tokenizer.__class__.__name__}")
     logger.info(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
 
+    # Log all parameter names and their requires_grad status
+    logger.info("Parameter trainability status:")
+    non_trainable_params = []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            non_trainable_params.append(name)
+            logger.info(f"  {name}: requires_grad=False")
+    
+    if non_trainable_params:
+        logger.info(f"Non-trainable parameters: {', '.join(non_trainable_params)}")
+    else:
+        logger.info("All parameters are trainable")
+
     # Count the trainable parameters
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Trainable parameters: {trainable_params:,}")
@@ -137,16 +150,30 @@ def save_model_checkpoint(
         # Save all weights
         model.save_pretrained(checkpoint_dir, state_dict=model.state_dict())
     else:
-        # Save only trainable weights
-        trainable_state_dict = {
-            k: v for k, v in model.state_dict().items() if v.requires_grad == True
-        }
-        # Lets log the trainable weights
-        for k, v in trainable_state_dict.items():
-            logger.debug(f"Trainable weight: {k} -> {v.shape}")
+        # Get a set of names of parameters that require gradients
+        trainable_param_names = set()
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                trainable_param_names.add(name)
+        
+        # Save only trainable weights by filtering state_dict using the parameter names
+        state_dict = model.state_dict()
+        trainable_state_dict = {}
+        
+        # Note: For GPT-2 models, lm_head.weight is typically tied to the embedding weights
+        # but appears separately in the state_dict. It may not be directly accessible through
+        # named_parameters(), which is why it might show as "missing" (148/149 parameters).
+        # This is expected behavior for GPT-2 models.
+        
+        for k, v in state_dict.items():
+            # Check if this key exactly matches a parameter name or
+            # if it's a key that contains a trainable parameter name
+            # (handles cases where state_dict keys might have prefixes)
+            if k in trainable_param_names or any(param_name in k for param_name in trainable_param_names):
+                trainable_state_dict[k] = v
         
         # Count parameters
-        total_params = len(model.state_dict())
+        total_params = len(state_dict)
         trainable_params = len(trainable_state_dict)
         
         logger.info(f"Saving trainable weights to {checkpoint_dir} ({trainable_params}/{total_params} parameters)")
