@@ -277,7 +277,7 @@ def train_model(
                 # Use torch.amp.autocast with 'cpu' device type when CUDA is not available or force_cpu is True
                 force_cpu = config["model"].get("force_cpu", False)
                 device_type = 'cuda' if (torch.cuda.is_available() and not force_cpu) else 'cpu'
-                with torch.amp.autocast(device_type=device_type, enabled=config["model"].get("use_bf16", True)):
+                with torch.amp.autocast(device_type=device_type, enabled=config["model"].get("use_amp_bf16", False)):
                     outputs = model(
                         input_ids=microbatch,
                         labels=microbatch,

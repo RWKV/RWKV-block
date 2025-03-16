@@ -31,12 +31,12 @@ def load_model_and_tokenizer(
     model_args = model_config.get("model_args", {})
     
     # Determine precision settings
-    use_bf16 = model_config.get("use_bf16", True)
+    use_amp_bf16 = model_config.get("use_amp_bf16", False)
     load_in_8bit = model_config.get("load_in_8bit", False)
     load_in_4bit = model_config.get("load_in_4bit", False)
     
     # Set torch dtype based on precision settings
-    torch_dtype = torch.bfloat16 if use_bf16 else torch.float32
+    torch_dtype = torch.bfloat16 if use_amp_bf16 else torch.float32
     
     # Load tokenizer first
     tokenizer = AutoTokenizer.from_pretrained(hf_model_path)

@@ -2,7 +2,7 @@
   // Model configuration
   "model": {
     "hf_model_path": "gpt2",  // HF model name or local path
-    "use_bf16": true,
+    "use_amp_bf16": false,
     "load_in_8bit": false,
     "load_in_4bit": false,
     "force_cpu": false,  // Set to true to force CPU usage even if CUDA is available

@@ -27,7 +27,7 @@ def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
     
     model_config = processed_config["model"]
     model_config.setdefault("hf_model_path", "gpt2")
-    model_config.setdefault("use_bf16", True)
+    model_config.setdefault("use_amp_bf16", False)
     model_config.setdefault("load_in_8bit", False)
     model_config.setdefault("load_in_4bit", False)
     model_config.setdefault("force_cpu", False)
