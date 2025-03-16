@@ -2,7 +2,7 @@
 # Simple script to run the Hugging Face Trainer CLI with GPT2 test configuration
 
 # Get the absolute path to the project root directory
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 # Set up Python path
 export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
@@ -11,7 +11,7 @@ export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
 CONFIG_PATH="$PROJECT_ROOT/test/hf_trainer/train_gpt2/test_config.jsonc"
 
 # Create a temporary output directory
-OUTPUT_DIR="$PROJECT_ROOT/test/hf_trainer/test_output"
+OUTPUT_DIR="$PROJECT_ROOT/test/hf_trainer/train_gpt2/output"
 mkdir -p "$OUTPUT_DIR"
 
 echo "Running GPT2 test with configuration: $CONFIG_PATH"
