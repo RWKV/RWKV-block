@@ -92,6 +92,7 @@ class Qwerky6LayerBlock(torch.nn.Module):
         self, 
         x:torch.Tensor, # hidden state
         last_wkv_state: torch.Tensor, 
+        last_shift_state: torch.Tensor,
         position_embeddings: Tuple[torch.Tensor, torch.Tensor] = None,
     ) -> tuple[torch.Tensor,torch.Tensor]:
         '''
@@ -110,9 +111,10 @@ class Qwerky6LayerBlock(torch.nn.Module):
         x = x.to(self.input_layernorm.weight.device)
 
         # Forward the time mix, with position embeddings
-        att_out, tmix_wkv = self.self_attn(
+        att_out, tmix_wkv, tshift = self.self_attn(
             self.input_layernorm(x).to(request_dtype),
             last_wkv_state, # tmix_wkv,,
+            last_shift_state, # tshift,
             position_embeddings=position_embeddings
         )
 
@@ -148,30 +150,32 @@ class Qwerky6LayerBlock(torch.nn.Module):
         x = self.drop1(x + mlp_out).to(request_dtype)
 
         # Return the output
-        return x, tmix_wkv
+        return x, tmix_wkv, tshift
     
     @torch.compile(mode="default")
     def forward_with_default_compile(
         self, 
         in_x:torch.Tensor, 
         in_wkv_state: torch.Tensor,
+        in_shift_state: torch.Tensor,
         out_x:torch.Tensor, 
         out_wkv_state: torch.Tensor,
+        out_shift_state: torch.Tensor
     ) -> tuple[torch.Tensor,torch.Tensor]:
         '''
         Compiled varient of the forward function
         With no new tensors being created for the output
         Useful for static memory allocation optimizations inference
         '''
-        out_x[:], out_wkv_state[:] = self.forward(in_x, in_wkv_state)
-        return out_x, out_wkv_state
+        out_x[:], out_wkv_state[:], out_shift_state[:] = self.forward(in_x, in_wkv_state, in_shift_state)
+        return out_x, out_wkv_state, out_shift_state
 
     @torch.compile(mode="reduce-overhead")
-    def forward_with_reduce_compile(self, in_x: torch.Tensor, in_wkv_state:torch.Tensor) -> tuple[torch.Tensor,torch.Tensor]:
+    def forward_with_reduce_compile(self, in_x: torch.Tensor, in_wkv_state:torch.Tensor, in_shift_state:torch.Tensor) -> tuple[torch.Tensor,torch.Tensor]:
         '''
         Compiled varient of the forward function
         '''
-        return self.forward(in_x, in_wkv_state)
+        return self.forward(in_x, in_wkv_state, in_shift_state)
     
     def load_from_model_state_dict(self, model_state_dict:dict, layer_id:int=-1, non_blocking:bool=True):
         '''

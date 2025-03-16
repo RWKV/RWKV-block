@@ -76,6 +76,7 @@ class Qwerky6Model(nn.Module):
                 for i in range(n_qwerky_layers):
                     stateTuneList[i] = nn.ParameterDict({
                         "wkv": nn.Parameter(torch.zeros(hidden_size // head_size, head_size, head_size, dtype=torch.float)),
+                        "shift": nn.Parameter(torch.zeros(1, hidden_size, dtype=torch.float)),
                     })
                 self.init_state = nn.ParameterList(stateTuneList)
 
@@ -91,6 +92,7 @@ class Qwerky6Model(nn.Module):
                 if configMap.freeze_wkv_state != True:
                     for i in range(num_hidden_layers):
                         self.init_state[i]["wkv"].requires_grad = True
+                        self.init_state[i]["shift"].requires_grad = True
 
 
         # Reset the default device and dtype
@@ -131,11 +133,13 @@ class Qwerky6Model(nn.Module):
                     for i in range(n_qwerky_layers):
                         stateTuneList[i] = nn.ParameterDict({
                             "wkv": nn.Parameter(torch.zeros(hidden_size // head_size, head_size, head_size, dtype=torch.float)),
+                            "shift": nn.Parameter(torch.zeros(1, hidden_size, dtype=torch.float)),
                         })
                     self.init_state = nn.ParameterList(stateTuneList)
                 else:
                     for i in range(n_qwerky_layers):
                         self.init_state[i]["wkv"].data.copy_(torch.zeros(hidden_size // head_size, head_size, head_size, dtype=torch.float))
+                        self.init_state[i]["shift"].data.copy_(torch.zeros(1, hidden_size, dtype=torch.float))
 
 
     def load_from_model_state_dict(self, state_dict: dict, non_blocking:bool=True):
@@ -154,6 +158,7 @@ class Qwerky6Model(nn.Module):
             for i in range(n_qwerky_layers):
                 if 'model.init_state.'+str(i)+'.wkv' in state_dict:
                     self.init_state[i]["wkv"].data.copy_(state_dict['model.init_state.'+str(i)+'.wkv'], non_blocking=True)
+                    self.init_state[i]["shift"].data.copy_(state_dict['model.init_state.'+str(i)+'.shift'], non_blocking=True)
 
     ### ---
     ###
@@ -180,13 +185,16 @@ class Qwerky6Model(nn.Module):
             # Use the saved init_state if enabled
             # TODO: Consider letting the wkv_state dtype be a parameter
             wkv_state = torch.zeros(batch_size, hidden_size // head_size, head_size, head_size, device=device, dtype=torch.float)
+            shift_state = torch.zeros(batch_size, 1, hidden_size, device=device, dtype=torch.float)
             if init_wkv_state and skip_init_state == False:
                 init_wkv = self.init_state[i]["wkv"]
+                init_shift = self.init_state[i]["shift"]
                 for b in range(batch_size):
                     wkv_state[b][:] = init_wkv
+                    shift_state[b][:] = init_shift
 
             # Prepare the state
-            init_state[i] = wkv_state
+            init_state[i] = [wkv_state, shift_state]
         return init_state
 
     ### ---

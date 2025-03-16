@@ -1,14 +1,16 @@
 import torch, math
 from torch import Tensor
-from typing import Union, Tuple
+from typing import Optional, Union, Tuple
 from torch.nn import functional as F
 from torch import nn
 
 from transformers.models.qwen2.modeling_qwen2 import apply_rotary_pos_emb
 
+from rwkv_block.v5_eagle.block.rwkv5_optimized_ops import RWKVx060_reshape_run
+
 from ...v6_finch.block.rwkv6_time_mix import RWKV6TimeMix, _run_tmix_backend, _has_fla, _has_triton, _has_cuda
 from .qwerky6_block_config_map import Qwerky6BlockConfigMap
-
+from fla.ops.gla import fused_recurrent_gla
 class Qwerky6TimeMix(torch.nn.Module):
     '''
     Time Mix block for QWERKY V6
@@ -146,7 +148,8 @@ class Qwerky6TimeMix(torch.nn.Module):
     def forward(
         self, 
         x:Tensor, 
-        wkv_state_in:Tensor = None, 
+        wkv_state_in:Tensor = None,
+        shift_state_in:Tensor = None, 
         position_embeddings: Tuple[torch.Tensor, torch.Tensor] = None,
     ) -> tuple[Tensor,Tensor,Tensor]:
         '''
@@ -154,175 +157,75 @@ class Qwerky6TimeMix(torch.nn.Module):
         
         Given:
         - Incoming token embedding size of shape [batch_size, seq_len, embedding_size]
-        - Incoming wkv_state containing of shapes [batch_size, n_head, head_size, head_size]
-        - Incoming v_first_val of shape [batch_size, seq_len, embedding_size]
+        - Incoming states containing of shapes:
+            [batch_size, state_size] ## Token Shift state,
+            [batch_size, n_head, head_size, head_size] ## WKV state
+        
         
         Returns a pair 
         - output embedding of shape [batch_size, seq_len, embedding_size]
-        - output wkv_state of shape [batch_size, n_head, head_size, head_size] 
-        - output v_first_val of shape [batch_size, seq_len, embedding_size]
+        - output state of shapes:
+            [batch_size, state_size] ## Token Shift state,
+            [batch_size, n_head, head_size, head_size] ## WKV state
+        
         '''
-
-        # x dtype
-        x_dtype = x.dtype
-
         # Get the sizing
         BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE = x.size()
         N_HEAD = self.n_head
         HEAD_SIZE = self.head_size
 
-        # Ensure wkv_state_in is initialized
-        if wkv_state_in is None:
-            wkv_state_in = torch.zeros(BATCH_SIZE,N_HEAD,HEAD_SIZE,HEAD_SIZE, dtype=torch.float, device=self.w0.device)
-        else:
-            wkv_state_in = wkv_state_in.clone()
-
         ##########
-        ## qwerky6
+        ## x060
         ##########
 
-        ## ---
-        ## No token shift
-        ## ---
-        
-        # if shift_state_in is None:
-        #     shift_state_in = torch.zeros(BATCH_SIZE, IN_EMB_SIZE, dtype=x.dtype, device=x.device)
+        shift_state_out = x[:, -1]
+        dxprev = torch.concat((shift_state_in.unsqueeze(1), x[:, :-1]), dim=1) - x
 
-        # shift_state_out = x[:, -1]
-        # dxprev = torch.cat((shift_state_in.unsqueeze(1), x[:, :-1]), dim=1) - x
+        xxx = x + dxprev * self.x_x
+        xxx = torch.tanh(xxx @ self.x_w1).view(BATCH_SIZE*SEQ_LEN, 5, -1).transpose(0, 1)
+        xxx = torch.bmm(xxx, self.x_w2).view(5, BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE)
 
-        ## ---
-        ## Normalize xr-xg values to x
-        ## ---
-        # xr = x + dxprev * self.x_r
-        # xw = x + dxprev * self.x_w
-        # xk = x + dxprev * self.x_k
-        # xv = x + dxprev * self.x_v
-        # xa = x + dxprev * self.x_a
-        # xg = x + dxprev * self.x_g
-        # xx = dxprev
+        mw, mk, mv, mr, mg = xxx.unbind(dim=0)
+        xw = x + dxprev * (self.w_w + mw)
+        xk = x + dxprev * (self.w_k + mk)
+        xv = x + dxprev * (self.w_v + mv)
+        xr = x + dxprev * (self.w_r + mr)
+        xg = x + dxprev * (self.w_g + mg)
 
-        xr = xw = xk = xv = xa = xg = x.to(self.q_proj.weight.device)
+        r = self.q_proj(xr)
+        k = self.k_proj(xk)
+        v = self.v_proj(xv)
+        g = F.silu(self.g_proj(xg))
 
-        r = self._linear_operation(xr, self.q_proj.weight, self.q_proj.bias) # self.q_proj(xr.to(self.q_proj.weight.dtype))
-        w_lora_result = self.w0.float() + (torch.tanh(xw.float() @ self.w1.float()) @ self.w2.float()).float()
-        k = self._linear_operation(xk, self.k_proj.weight, self.k_proj.bias) # self.k_proj(xk.to(self.k_proj.weight.dtype))
-        v = self._linear_operation(xv, self.v_proj.weight, self.v_proj.bias) # self.v_proj(xv.to(self.v_proj.weight.dtype))
-        g = torch.sigmoid(xg.float() @ self.g1.float()) @ self.g2.float()
-        iclr = torch.sigmoid(self.a0.float() + (xa.float() @ self.a1.float()) @ self.a2.float()) # a is "in-context learning rate"
+        w = (self.w_w0 + torch.tanh(xw @ self.w_w1) @ self.w_w2).to(r.dtype)
 
-        ##########
-        # Apply rotary pos emb
-        ##########
-        if position_embeddings is not None:
-            # Debug prints
-            # print(f"r shape before view: {r.shape}")  # Should be [B, T, hidden_size]
-            # print(f"k shape before view: {k.shape}")  # Should be [B, T, hidden_size_att]
-            # print(f"N_HEAD: {N_HEAD}, n_gqa_head: {self.n_gqa_head}, HEAD_SIZE: {HEAD_SIZE}")
-            
-            r = r.view(BATCH_SIZE, SEQ_LEN, -1, HEAD_SIZE)
-            k = k.view(BATCH_SIZE, SEQ_LEN, -1, HEAD_SIZE)
-            
-            # print(f"r shape after view: {r.shape}")  # Should be [B, T, N_HEAD, HEAD_SIZE]
-            # print(f"k shape after view: {k.shape}")  # Should be [B, T, n_gqa_head, HEAD_SIZE]
-            
-            cos, sin = position_embeddings
-            r, k = apply_rotary_pos_emb(r, k, cos, sin, unsqueeze_dim=2)
-            r = r.view(BATCH_SIZE, SEQ_LEN, -1)
-            k = k.view(BATCH_SIZE, SEQ_LEN, -1)
-            # r = r.transpose(1,2).view(B,T,-1).to(v.dtype)
-            # k = k.transpose(1,2).view(B,T,-1).to(v.dtype)
+        x, wkv_state_out = fused_recurrent_gla(
+            r, k, v, w.float(),
+            None, None, wkv_state_in, True)
+        x = x.view(BATCH_SIZE * SEQ_LEN, IN_EMB_SIZE)
 
-        # repeat k/v heads if n_kv_heads < n_heads
-        k = k.view(BATCH_SIZE, SEQ_LEN, -1, 1, HEAD_SIZE).expand(-1, -1, -1, self.n_gqa_head_group, -1).reshape(BATCH_SIZE, SEQ_LEN, -1)
-        v = v.view(BATCH_SIZE, SEQ_LEN, -1, 1, HEAD_SIZE).expand(-1, -1, -1, self.n_gqa_head_group, -1).reshape(BATCH_SIZE, SEQ_LEN, -1)
+        x = self.o_proj(x * g)
 
-        ##########
-        # qwerky6
-        ##########
-        
-        # kk = F.normalize((k * self.k_k).view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1), dim=-1, p=2.0).view(BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE)
-        kk = F.normalize((k * self.k_k).view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1), dim=-1, p=2.0).view(BATCH_SIZE,SEQ_LEN,-1)
-
-        # ---
-        # Note the change to ICLR value is intentional here
-        # as a means to normalize the value without layernorm
-        # commented is the original code
-        # ---
-        # k = k * (1 + (iclr-1) * self.k_a)
-        # ---
-        iclr = 1 + (iclr-1) * self.k_a
-        k = k * iclr
-
-        ##########
-        # x060
-        ##########
-        if v_first_val is None:
-            v_first_val = v # store the v of the first layer
-        else:
-            v = v.float() + (v_first_val.float() - v.float()) * torch.sigmoid(self.v0.float() + (xv.float() @ self.v1.float()) @ self.v2.float()) # add value residual
-            
-        ##########
-        # Auto select the backend if not specified
-        tmix_backend = self.tmix_backend.lower()
-        if tmix_backend == "auto":
-            if r.device.type == "cpu":
-                tmix_backend = "pytorch"
-            elif _has_triton is True:
-                tmix_backend = "triton_bighead"
-            elif _has_fla is True:
-                tmix_backend = "fla"
-            elif _has_cuda is True:
-                tmix_backend = "cuda"
-            else:
-                tmix_backend = "pytorch"
-
-        # # Warn against CUDA backend
-        # if tmix_backend == "cuda" and HEAD_SIZE != 64:
-        #     print(f"[WARNING] !!! CUDA backend has potential memory safety issues for qwerky for non-64 head sizes !!!")
-
-        # Contigous safety
-        xi = torch.zeros_like(x, device=x.device, dtype=x.dtype).contiguous() 
-        xi, r, k, v, kk, iclr = [i.bfloat16().contiguous() for i in [xi, r, k, v, kk, iclr]]
-        w_lora_result, wkv_state_in = [i.float().contiguous() for i in [w_lora_result, wkv_state_in]]
-
-        # Apply the time mix backend
-        xx, wkv_state_out = _run_tmix_backend(tmix_backend, r, w_lora_result, k, v, kk, iclr, BATCH_SIZE, SEQ_LEN, N_HEAD, HEAD_SIZE, xi, wkv_state_in)
-        ##########
-
-        # xx = self.ln_x(xx.view(BATCH_SIZE * SEQ_LEN, IN_EMB_SIZE)).view(BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE)
-        xn = torch.nn.functional.group_norm(xx.view(BATCH_SIZE * SEQ_LEN, IN_EMB_SIZE).float(), num_groups=N_HEAD, weight=self.ln_x.weight.float(), bias=self.ln_x.bias.float(), eps = self.ln_x.eps).view(BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE).to(dtype=x_dtype)
-
-        # ---
-        # Intentionally removed for qwerky6
-        # ---
-        # xx = xx + ((r.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)*k.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)*self.r_k).sum(dim=-1, keepdim=True) * v.view(BATCH_SIZE,SEQ_LEN,N_HEAD,-1)).view(BATCH_SIZE,SEQ_LEN,IN_EMB_SIZE)
-        
-        # xo = self.o_proj(xn * g).to(dtype=x_dtype)
-        # F.linear((xn * g).float(), self.o_proj.weight.float()).to(dtype=x_dtype)
-        xo = self._linear_operation((xn * g).float(), self.o_proj.weight.float()).to(x_dtype)
-
-        # Return the results
-        return xo, wkv_state_out
+        return x, shift_state_out, wkv_state_out
     
     @torch.compile(mode="default")
-    def forward_with_default_compile(self, in_x:Tensor, wkv_state_in:Tensor, out_x:Tensor, wkv_state_out:Tensor, position_embeddings: Tuple[torch.Tensor, torch.Tensor]=None) -> tuple[Tensor,Tensor,Tensor]:
+    def forward_with_default_compile(self, in_x:Tensor, wkv_state_in:Tensor,shift_state_in:Tensor, out_x:Tensor, wkv_state_out:Tensor, shift_state_out:Tensor, position_embeddings: Tuple[torch.Tensor, torch.Tensor]=None) -> tuple[Tensor,Tensor,Tensor]:
         '''
         Compiled varient of the forward function
         With no new tensors being created for the output
         Useful for static memory allocation optimizations inference
         '''
-        out_x[:], wkv_state_out[:], = self.forward(in_x, wkv_state_in, position_embeddings=position_embeddings)
-        return out_x, wkv_state_out
+        out_x[:], wkv_state_out[:], shift_state_out[:] = self.forward(in_x, wkv_state_in,shift_state_in, position_embeddings=position_embeddings)
+        return out_x, wkv_state_out, shift_state_out
 
     @torch.compile(mode="reduce-overhead")
-    def forward_with_reduce_compile(self, in_x:Tensor, wkv_state_in:Tensor, position_embeddings: Tuple[torch.Tensor, torch.Tensor] = None) -> tuple[Tensor,Tensor,Tensor]:
+    def forward_with_reduce_compile(self, in_x:Tensor, wkv_state_in:Tensor, shift_state_in:Tensor, position_embeddings: Tuple[torch.Tensor, torch.Tensor] = None) -> tuple[Tensor,Tensor,Tensor]:
         '''
         Compiled varient of the forward function
         With no input tensor being modified. 
         Useful for reduce-overhead compile mode
         '''
-        return self.forward(in_x, wkv_state_in, position_embeddings=position_embeddings)
+        return self.forward(in_x, wkv_state_in, shift_state_in, position_embeddings=position_embeddings)
     
     # ---------------------------------
     #
