@@ -74,21 +74,6 @@ TRAINER_BASE_IMAGE = modal.Image.from_registry(
     # We use the lm-eval-harness repo directly, instead from our local repo
     # to reduce the "file sync" time, as this is a really large repo
     "mkdir -p /workspace/test_ext && cd /workspace/test_ext && git clone --depth 1 https://github.com/EleutherAI/lm-evaluation-harness.git && cd lm-evaluation-harness && pip install -e .",
-).add_local_dir(
-    # Add the NIAH test repo to the container
-    os.path.join(PROJECT_DIR, "test_ext/NIAH"),
-    remote_path="/workspace/test_ext/NIAH",
-    ignore=[".*", ".git", ".venv", ".idea", "__pycache__", "*.egg-info"],
-    copy=True
-).run_commands(
-    "cd /workspace/test_ext/NIAH && pip install -r requirements.txt",
-).add_local_file(
-    # Add the RWKV_block repo to the container
-    os.path.join(PROJECT_DIR, "block/RWKV_block/requirements.txt"),
-    remote_path="/workspace/block/RWKV_block/requirements.txt",
-    copy=True
-).run_commands(
-    "cd /workspace/block/RWKV_block/ && pip install -r requirements.txt",
 ).add_local_file(
     # Add the main project requirements file to the container
     os.path.join(PROJECT_DIR, "requirements.txt"),

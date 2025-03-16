@@ -87,7 +87,7 @@ else:
 
 # App operator
 app = modal.App(
-    name=f"layerwise-trainer-{MODAL_SYSTEM_TYPE}",
+    name=f"rwkv-x-dev-{MODAL_SYSTEM_TYPE}",
     # Set the image to use for the app
     image=TRAINER_ENV_IMAGE,
     # # Disable local source packages
