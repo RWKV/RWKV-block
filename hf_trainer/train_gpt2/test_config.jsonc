@@ -12,10 +12,7 @@
 
   // Training configuration
   "training": {
-    "learning_rate": 5e-5,
-    "weight_decay": 0.01,
     "gradient_accumulation_steps": 2,
-    "warmup_steps": 10,
     "training_steps": 20,  // Limited steps for testing
     "save_steps": 10,
     "save_total_limit": 1,
@@ -24,18 +21,17 @@
     "output_dir": "./test_output"
   },
 
-  // Optimizer configuration
+  // Optimizer and scheduler configuration
   "optimizer": {
     "name": "adamw",
+    "max_learning_rate": 5e-5,  // Learning rate after warmup
+    "min_learning_rate": 1e-6,  // Final learning rate after cosine decay
+    "warmup_steps": 10,  // Number of warmup steps
+    "scheduler": "cosine",  // Options: linear, cosine, constant, constant_with_warmup
+    "weight_decay": 0.01,
     "beta1": 0.9,
     "beta2": 0.999,
     "epsilon": 1e-8
-  },
-
-  // Scheduler configuration
-  "scheduler": {
-    "name": "cosine",
-    "num_warmup_steps": 10
   },
 
   // Dataset configuration (using TextDatasetStreamer)
