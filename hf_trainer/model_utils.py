@@ -83,7 +83,15 @@ def load_model_and_tokenizer(
     # Log model and tokenizer information
     logger.info(f"Model loaded: {model.__class__.__name__}")
     logger.info(f"Tokenizer loaded: {tokenizer.__class__.__name__}")
-    logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    logger.info(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    # Count the trainable parameters
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logger.info(f"Trainable parameters: {trainable_params:,}")
+
+    # Throw if there are no trainable parameters
+    if trainable_params == 0:
+        raise ValueError("No trainable parameters found in the model. Check your model configuration.")
     
     return model, tokenizer
 
@@ -127,13 +135,15 @@ def save_model_checkpoint(
     if save_full_weights:
         logger.info(f"Saving full model weights to {checkpoint_dir}")
         # Save all weights
-        model.save_pretrained(checkpoint_dir)
+        model.save_pretrained(checkpoint_dir, state_dict=model.state_dict())
     else:
         # Save only trainable weights
         trainable_state_dict = {
-            k: v for k, v in model.state_dict().items()
-            if v.requires_grad # Always save init_state parameters
+            k: v for k, v in model.state_dict().items() if v.requires_grad == True
         }
+        # Lets log the trainable weights
+        for k, v in trainable_state_dict.items():
+            logger.debug(f"Trainable weight: {k} -> {v.shape}")
         
         # Count parameters
         total_params = len(model.state_dict())

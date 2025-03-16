@@ -226,7 +226,7 @@ def train_model(
                 scheduler.load_state_dict(checkpoint_state["scheduler_state_dict"])
     
     # Set up training state
-    model.train()
+    model.train(True)
     completed_steps = global_step
     
     # Track checkpoints to keep
