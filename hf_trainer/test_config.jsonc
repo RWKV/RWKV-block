@@ -1,7 +1,7 @@
 {
   // Model configuration
   "model": {
-    "name_or_path": "gpt2",  // Small GPT2 model
+    "hf_model_path": "gpt2",  // Small GPT2 model
     "use_bf16": false,  // Disable BF16 for CPU training
     "load_in_8bit": false,
     "load_in_4bit": false,
