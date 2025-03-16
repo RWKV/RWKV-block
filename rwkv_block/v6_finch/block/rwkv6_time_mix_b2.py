@@ -5,7 +5,7 @@ from typing import Union
 from torch.nn import functional as F
 
 from .rwkv6_block_config_map import RWKV6BlockConfigMap
-from ...v5_eagle.block.rwkv5_optimized_ops import RWKVx060_reshape_run
+from .rwkv6_optimized_ops import RWKVx060_reshape_run
 
 class RWKV6TimeMixB2(nn.Module):
     '''
@@ -39,6 +39,9 @@ class RWKV6TimeMixB2(nn.Module):
         self.head_size_divisor = head_size_divisor
         self.tmix_backend = configMap.tmix_backend
 
+        tmix_maa_dim = configMap.tmix_maa_dim
+        tmix_decay_dim = configMap.tmix_decay_dim
+
         # # Some internal flags, to sort out
         # use_one_minus_w = True
         # use_gf_v2 = True
@@ -65,7 +68,7 @@ class RWKV6TimeMixB2(nn.Module):
             self.time_maa_w = nn.Parameter(1.0 - torch.pow(ddd, ratio_1_to_almost0)).to(device, dtype=dtype)
             self.time_maa_v2 = nn.Parameter(1.0 - (torch.pow(ddd, ratio_1_to_almost0) + 0.3 * ratio_0_to_1)).to(device, dtype=dtype)
 
-            D_MIX_DIM = 32 # generate TIME_MIX for w,k,v,r,g
+            D_MIX_DIM = tmix_maa_dim # generate TIME_MIX for w,k,v,r,g
             self.time_maa_w2 = nn.Parameter(torch.zeros(5, D_MIX_DIM, hidden_size).uniform_(-0.01, 0.01)).to(device, dtype=dtype)
             self.time_maa_w1 = nn.Parameter(torch.zeros(hidden_size, D_MIX_DIM*self.time_maa_w2.size(0))).to(device, dtype=dtype)
 
@@ -75,7 +78,7 @@ class RWKV6TimeMixB2(nn.Module):
                 decay_speed[n] = -6 + 5 * (n / (hidden_size_att - 1)) ** (0.7 + 1.3 * ratio_0_to_1)
             self.time_decay = nn.Parameter(decay_speed.reshape(1,1,hidden_size_att)).to(device, dtype=dtype).to(device, dtype=dtype)
 
-            D_DECAY_DIM = 64
+            D_DECAY_DIM = tmix_decay_dim
             self.time_decay_w1 = nn.Parameter(torch.zeros(hidden_size, D_DECAY_DIM)).to(device, dtype=dtype)
             self.time_decay_w2 = nn.Parameter(torch.zeros(D_DECAY_DIM, hidden_size_att).uniform_(-0.01, 0.01)).to(device, dtype=dtype)
 
