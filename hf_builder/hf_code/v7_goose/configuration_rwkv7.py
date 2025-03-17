@@ -37,6 +37,9 @@ class RWKV7Config(PretrainedConfig):
             (Valid values: "auto", "pytorch", "cuda", "triton", "triton_bighead", "fla", "fla_fused", "pytorch_ref", "pytorch_ref_fp32")
         init_wkv_state (`bool`, *optional*, defaults to `False`):
             Whether to initialize the wkv state in the model. Used for WKV state tuning.
+        memory_tune_path (`str`, *optional*, defaults to `None`):
+            Path to a safetensor file containing memory tune parameters. Can be a relative path to the HF repo
+            or an absolute path in the filesystem. If provided, init_wkv_state will be automatically set to True.
         forward_chunk_size (`int`, *optional*, defaults to 4096):
             Chunk size for the forward pass. Used to break large inputs into smaller chunks to avoid OOM errors.
             
@@ -88,6 +91,7 @@ class RWKV7Config(PretrainedConfig):
         head_size=64,
         tmix_backend="auto",
         init_wkv_state=False,
+        memory_tune_path=None,
         # Trainer model configs
         dropout_rate=0.0,
         # Internal forward chunk size
@@ -118,7 +122,13 @@ class RWKV7Config(PretrainedConfig):
 
         self.head_size = head_size
         self.tmix_backend = tmix_backend
+        
+        # If memory_tune_path is set, ensure init_wkv_state is True
+        if memory_tune_path is not None:
+            init_wkv_state = True
+            
         self.init_wkv_state = init_wkv_state
+        self.memory_tune_path = memory_tune_path
         self.forward_chunk_size = forward_chunk_size
 
         # self.device = device

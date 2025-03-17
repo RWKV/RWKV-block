@@ -15,7 +15,7 @@ from transformers.modeling_outputs import ModelOutput, CausalLMOutputWithPast
 from transformers.cache_utils import Cache
 from torch.utils.checkpoint import checkpoint
 
-import torch, math
+import torch, math, os
 from torch import nn
 from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
@@ -27,6 +27,9 @@ from typing import List, Dict, Optional, Tuple, Union, Any
 # Load the RWKV7Config and RWKV7GooseModel
 from .configuration_rwkv7 import RWKV7Config
 from .modeling_blocks_rwkv7 import RWKV7GooseModel
+from transformers.utils import logging
+
+logger = logging.get_logger(__name__)
 
 class RWKV7State(Cache):
     '''
@@ -309,6 +312,10 @@ class RWKV7Model(RWKV7GooseModel, RWKV7PreTrainedModel):
         super().__init__(config)
         # RWKV7GooseModel.__init__(self,config)
         # RWKV7PreTrainedModel.__init__(self,config)
+        
+        # After initialization, check if memory_tune_path is specified
+        if hasattr(config, 'memory_tune_path') and config.memory_tune_path is not None:
+            self.load_memory_tune(config.memory_tune_path)
     
     def get_input_embeddings(self):
         return self.emb
@@ -319,6 +326,86 @@ class RWKV7Model(RWKV7GooseModel, RWKV7PreTrainedModel):
         return self.lm_head
     def set_output_embeddings(self, new_embeddings):
         self.lm_head = new_embeddings
+        
+    def load_memory_tune(self, memory_tune_path):
+        """
+        Load memory tune parameters from a safetensor file and apply them to init_state
+        
+        Args:
+            memory_tune_path: Path to the safetensor file containing memory tune parameters.
+                             Can be a relative path to the HF model weights or an absolute path.
+        """
+        # Ensure init_wkv_state is True
+        if not hasattr(self, 'init_state'):
+            raise ValueError("Cannot load memory tune: init_state not initialized (init_wkv_state must be True)")
+        
+        # Handle relative paths (relative to the HF model weights)
+        abs_memory_tune_path = None
+        hf_repo_name = None
+        if os.path.isabs(memory_tune_path):
+            abs_memory_tune_path = os.path.abspath(memory_tune_path)
+        elif hasattr(self.config, "name_or_path"):
+            if os.path.exists(self.config.name_or_path):
+                abs_memory_tune_path = os.path.join(self.config.name_or_path, memory_tune_path)
+            else:
+                hf_repo_name = self.config.name_or_path
+        
+        # Load the safetensor file
+        memory_tune_state = None
+        if abs_memory_tune_path is not None:
+            try:
+                from safetensors.torch import load_file
+                memory_tune_state = load_file(memory_tune_path)
+            except Exception as e:
+                logger.error(f"Failed to load memory tune from {memory_tune_path}: {str(e)}")
+                raise e
+        elif hf_repo_name is not None:
+            # Load from HF repo
+            try:
+                from huggingface_hub import hf_hub_download
+                memory_tune_path = hf_hub_download(hf_repo_name, memory_tune_path)
+                from safetensors.torch import load_file
+                memory_tune_state = load_file(memory_tune_path)
+            except Exception as e:
+                logger.error(f"Failed to load memory tune from {hf_repo_name}: {str(e)}")
+                raise e
+
+        # If memory_tune_state is None, 
+        # it means the file was not found or could not be loaded
+        if memory_tune_state is None:
+            raise ValueError(f"Memory tune file not found or could not be loaded from {memory_tune_path}")
+
+        # Apply the loaded parameters to init_state
+        for i in range(self.config.num_hidden_layers):
+            key = f'init_state.{i}.wkv'
+            if key in memory_tune_state:
+                if i < len(self.init_state):
+                    self.init_state[i]["wkv"].data.copy_(memory_tune_state[key])
+                else:
+                    raise ValueError(f"Model init_state not properly initialized or layer {i} out of range")
+        
+        logger.info(f"Successfully loaded memory tune from {memory_tune_path}")
+    
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        # Check if memory_tune_path is in kwargs and ensure init_wkv_state is True if it is
+        memory_tune_path = kwargs.get('memory_tune_path', None)
+        if memory_tune_path is not None:
+            # Ensure init_wkv_state is True in config
+            if 'config' in kwargs:
+                if isinstance(kwargs['config'], dict):
+                    kwargs['config']['init_wkv_state'] = True
+                elif hasattr(kwargs['config'], 'init_wkv_state'):
+                    kwargs['config'].init_wkv_state = True
+        
+        # Normal from_pretrained behavior
+        model = super().from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        
+        # Load memory tune if specified
+        if memory_tune_path is not None:
+            model.load_memory_tune(memory_tune_path)
+        
+        return model
 
     @add_start_docstrings_to_model_forward(RWKV7_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
