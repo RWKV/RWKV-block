@@ -270,6 +270,14 @@ class TextDatasetStreamer(IterableDataset):
     for use in training language models. It supports dataset interleaving, sharding for
     distributed training, and dynamic batch packing.
 
+    Packing Modes:
+    The class supports two packing modes for handling samples:
+    1. 'split' (default): Samples can be split across batch boundaries, maximizing utilization
+       but potentially breaking the context of individual samples.
+    2. 'preserve': Samples are preserved as complete units and never split across boundaries.
+       Samples longer than the context length are skipped, and remaining space in sequences
+       is padded. This ensures the integrity of each sample's context.
+
     Templates:
     The class uses a template system to format dataset rows before tokenization. Templates
     are specified in the dataset_configs parameter and use an enhanced version of Python's 
@@ -400,7 +408,7 @@ class TextDatasetStreamer(IterableDataset):
 
     def thread_safe_tokenizer_encode(self, text):
         # Single thread safe tokenization
-        # While this is potenitally a bottleneck, HFDatasetStreamer
+        # While this is potentially a bottleneck, HFDatasetStreamer
         # is meant to be an instance per GPU. So it should be "ok"
         try:
             with self._tokenizer_lock:
@@ -439,7 +447,7 @@ class TextDatasetStreamer(IterableDataset):
                 **hf_args
             )
 
-            # Log that the dataset is being prepaird
+            # Log that the dataset is being prepared
             print(f"## Preparing dataset: {hf_path} ...")
 
             # Shard the dataset for distributed training
@@ -695,6 +703,9 @@ class TextDatasetStreamer(IterableDataset):
                         
                         # Skip samples that are longer than the context length
                         if len(sample_tokens) > self.packing_context_length:
+                            # Log skipped sample with truncated text
+                            truncated_text = sample["text"][:100] + "..." if len(sample["text"]) > 100 else sample["text"]
+                            print(f"[INFO] Skipping sample in preserve mode: length={len(sample_tokens)}, text='{truncated_text}'")
                             continue
                         
                         # Check if adding this sample would exceed the context length
