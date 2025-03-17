@@ -264,29 +264,45 @@ def train_model(
                 dataset_iterator = iter(dataset)
                 batch = next(dataset_iterator)
             
-            # Get input_ids tensor
+            # Get input_ids and train_mask tensors
             input_ids = batch["input_ids"]
+            train_mask = batch["train_mask"] if "train_mask" in batch else torch.ones_like(input_ids, dtype=torch.bool)
             
             # Process in microbatches
             microbatch_losses = []
             for mb_start in range(0, input_ids.size(0), microbatch_size):
                 mb_end = min(mb_start + microbatch_size, input_ids.size(0))
-                microbatch = input_ids[mb_start:mb_end].to(model.device)
+                mb_input_ids = input_ids[mb_start:mb_end].to(model.device)
+                mb_train_mask = train_mask[mb_start:mb_end].to(model.device)
                 
                 # Forward pass
                 # Use torch.amp.autocast with 'cpu' device type when CUDA is not available or force_cpu is True
                 force_cpu = config["model"].get("force_cpu", False)
                 device_type = 'cuda' if (torch.cuda.is_available() and not force_cpu) else 'cpu'
                 with torch.amp.autocast(device_type=device_type, enabled=config["model"].get("use_amp_bf16", False)):
+                    # Get model outputs (logits)
                     outputs = model(
-                        input_ids=microbatch,
-                        labels=microbatch,
+                        input_ids=mb_input_ids,
                         return_dict=True
                     )
-                
-                # Get loss
-                loss = outputs.loss
-                
+                    
+                    # Calculate loss with masking
+                    logits = outputs.logits
+                    
+                    # Shift logits and labels for next token prediction
+                    shift_logits = logits[..., :-1, :].contiguous()
+                    shift_labels = mb_input_ids[..., 1:].contiguous()
+                    shift_mask = mb_train_mask[..., 1:].contiguous()
+                    
+                    # Calculate per-token loss
+                    loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+                    losses = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+                    
+                    # Apply mask and calculate mean
+                    masked_losses = losses * shift_mask.view(-1).float()
+                    # Add small epsilon to avoid division by zero
+                    loss = masked_losses.sum() / (shift_mask.sum().float() + 1e-8)
+            
                 # Scale loss for gradient accumulation
                 scaled_loss = loss / gradient_accumulation_steps
                 
