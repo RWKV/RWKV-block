@@ -13,6 +13,7 @@ from transformers.utils import (
 from transformers.generation import GenerationMixin
 from transformers.modeling_outputs import ModelOutput, CausalLMOutputWithPast
 from transformers.cache_utils import Cache
+from torch.utils.checkpoint import checkpoint
 
 import torch, math
 from torch import nn
@@ -345,19 +346,15 @@ class RWKV7Model(RWKV7GooseModel, RWKV7PreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if output_attentions:
-            warnings.warning_once("`RWKV7Model` does not `output_attentions` now, setting it to `False`.")
+            warnings.warn("`RWKV7Model` does not `output_attentions` now, setting it to `False`.")
             output_attentions = False
         
         if self.gradient_checkpointing and self.training and use_cache:
-            warnings.warning_once("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...")
+            warnings.warn("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...")
             use_cache = False
  
-        if self.gradient_checkpointing and self.training and use_cache:
-            warnings.warning_once("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...")
-            use_cache = False
-
         if output_hidden_states:
-            warnings.warning_once("`RWKV7Model` does not `output_hidden_states` now, setting it to `False`.")
+            warnings.warn("`RWKV7Model` does not `output_hidden_states` now, setting it to `False`.")
             output_hidden_states = False
 
         # ---
@@ -427,7 +424,7 @@ class RWKV7Model(RWKV7GooseModel, RWKV7PreTrainedModel):
         # Block forward, with gradient if needed
         def block_forward(block, in_x_state, in_rwkv_state, in_v_first):
             if self.gradient_checkpointing and self.training:
-                return self._gradient_checkpointing_func(
+                return checkpoint(
                     block.__call__, in_x_state, in_rwkv_state, in_v_first
                 )
             else:

@@ -343,19 +343,15 @@ class RWKV6Model(RWKV6FinchModel, RWKV6PreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if output_attentions:
-            warnings.warning_once("`RWKV6Model` does not `output_attentions` now, setting it to `False`.")
+            warnings.warn("`RWKV6Model` does not `output_attentions` now, setting it to `False`.")
             output_attentions = False
         
         if self.gradient_checkpointing and self.training and use_cache:
-            warnings.warning_once("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...")
+            warnings.warn("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...")
             use_cache = False
  
-        if self.gradient_checkpointing and self.training and use_cache:
-            warnings.warning_once("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...")
-            use_cache = False
-
         if output_hidden_states:
-            warnings.warning_once("`RWKV6Model` does not `output_hidden_states` now, setting it to `False`.")
+            warnings.warn("`RWKV6Model` does not `output_hidden_states` now, setting it to `False`.")
             output_hidden_states = False
 
         # ---

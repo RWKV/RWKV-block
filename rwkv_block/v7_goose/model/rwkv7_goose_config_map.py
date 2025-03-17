@@ -12,7 +12,7 @@ class RWKV7GooseConfigMap(RWKV7BlockConfigMap):
     forward_chunk_size: int = 4096
 
     init_wkv_state: bool      = False # Include init WKV state within the model
-    freeze_wkv_state: bool    = True  # Freeze the WKV state, require init_wkv_state=True
+    freeze_wkv_state: bool    = False # Freeze the WKV state, require init_wkv_state=True
     freeze_full_weights: bool = False # Freeze the model training weights
     
     # ---
@@ -24,7 +24,7 @@ class RWKV7GooseConfigMap(RWKV7BlockConfigMap):
         forward_chunk_size: Optional[int] = 4096,
 
         init_wkv_state: bool = False,
-        freeze_wkv_state: bool = True,
+        freeze_wkv_state: bool = False,
         freeze_full_weights: bool = False,
         **kwargs
     ) -> None:

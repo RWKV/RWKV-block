@@ -19,6 +19,7 @@ import torch, math
 from torch import nn
 from torch.nn import CrossEntropyLoss
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
 import warnings
 from dataclasses import dataclass
@@ -370,19 +371,19 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if output_attentions:
-            warnings.warning_once("`Qwerky7Model` does not `output_attentions` now, setting it to `False`.")
+            warnings.warn("`Qwerky7Model` does not `output_attentions` now, setting it to `False`.")
             output_attentions = False
         
         if self.gradient_checkpointing and self.training and use_cache:
-            warnings.warning_once("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...")
+            warnings.warn("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...")
             use_cache = False
  
         if self.gradient_checkpointing and self.training and use_cache:
-            warnings.warning_once("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...")
+            warnings.warn("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`...")
             use_cache = False
 
         if output_hidden_states:
-            warnings.warning_once("`Qwerky7Model` does not `output_hidden_states` now, setting it to `False`.")
+            warnings.warn("`Qwerky7Model` does not `output_hidden_states` now, setting it to `False`.")
             output_hidden_states = False
 
         # ---
@@ -445,7 +446,7 @@ class Qwerky7BaseModel(RwkvBlockQwerky7Model, Qwerky7PreTrainedModel):
         # Block forward, with gradient if needed
         def qwerky_layer_forward(layer, in_x_state, in_qwerky_state, in_v_first, in_position_embeddings):
             if self.gradient_checkpointing and self.training:
-                return self._gradient_checkpointing_func(
+                return checkpoint(
                     layer.__call__, in_x_state, in_qwerky_state, in_v_first, position_embeddings=in_position_embeddings
                 )
             else:

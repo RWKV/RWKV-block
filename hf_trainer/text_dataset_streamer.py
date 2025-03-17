@@ -124,18 +124,25 @@ class TemplateFormatter:
             # Return empty string for invalid inputs
             return ''
     
+    # Keep track of missing fields to avoid repetitive warnings
+    _missing_fields_log = set()
+    
     @classmethod
-    def format_template(cls, template: str, data: Dict[str, Any]) -> str:
+    def format_template(cls, template: str, data: Dict[str, Any], dataset_path: str = None) -> str:
         """
         Format a template string using the provided data.
         
         Args:
             template: The template string with placeholders
             data: The data dictionary to use for formatting
+            dataset_path: Optional path to the dataset for logging purposes
             
         Returns:
             The formatted string
         """
+        # Track missing fields in this template
+        missing_fields = []
+        
         def replace_placeholder(match):
             placeholder = match.group(1)
             
@@ -148,6 +155,7 @@ class TemplateFormatter:
                 # Parse arguments
                 args = []
                 kwargs = {}
+                missing_args = []
                 
                 if args_str.strip():
                     # Split by commas, but respect nested structures
@@ -186,8 +194,11 @@ class TemplateFormatter:
                                 # Otherwise, try to get it from the data
                                 else:
                                     value = cls.get_nested_value(data, value)
-                            except:
-                                # If evaluation fails, use the literal value
+                            except (KeyError, TypeError, IndexError) as e:
+                                # If evaluation fails due to missing key, track it
+                                if not value.startswith("'") and not value.startswith('"'):
+                                    missing_args.append(value)
+                                # Use the literal value
                                 pass
                             
                             kwargs[key] = value
@@ -202,9 +213,17 @@ class TemplateFormatter:
                                 # Otherwise, try to get it from the data
                                 else:
                                     args.append(cls.get_nested_value(data, part))
-                            except:
-                                # If evaluation fails, use the literal value
+                            except (KeyError, TypeError, IndexError) as e:
+                                # If evaluation fails due to missing key, track it
+                                if not part.startswith("'") and not part.startswith('"'):
+                                    missing_args.append(part)
+                                # Use the literal value
                                 args.append(part)
+                
+                # Log missing arguments
+                if missing_args:
+                    for arg in missing_args:
+                        missing_fields.append(f"{func_name}({arg})")
                 
                 # Call the appropriate function
                 if func_name == 'to_letter':
@@ -222,11 +241,24 @@ class TemplateFormatter:
             try:
                 return str(cls.get_nested_value(data, placeholder))
             except (KeyError, TypeError, IndexError):
+                # Track missing field
+                missing_fields.append(placeholder)
                 # Return an empty placeholder for missing keys
                 return f"[Missing: {placeholder}]"
         
         # Replace all placeholders in the template
-        return cls.PLACEHOLDER_PATTERN.sub(replace_placeholder, template)
+        result = cls.PLACEHOLDER_PATTERN.sub(replace_placeholder, template)
+        
+        # Log missing fields (only once per field per dataset)
+        if missing_fields:
+            for field in missing_fields:
+                log_key = f"{dataset_path}:{field}" if dataset_path else field
+                if log_key not in cls._missing_fields_log:
+                    cls._missing_fields_log.add(log_key)
+                    dataset_info = f" in dataset '{dataset_path}'" if dataset_path else ""
+                    print(f"[WARNING] Missing field '{field}'{dataset_info} - using placeholder")
+        
+        return result
 
 # Apply template function encapsulation
 # to avoid template scope leakage
@@ -235,8 +267,26 @@ def apply_multipart_template(in_dataset, in_dataset_path, in_multipart_template,
         try:
             # Process multipart template
             formatted_parts = []
+            missing_fields = []
+            
             for template_part in in_multipart_template:
-                formatted_parts.append(TemplateFormatter.format_template(template_part, x))
+                # Check for missing fields in the template
+                result = TemplateFormatter.format_template(template_part, x, in_dataset_path)
+                
+                # Check if the result contains any missing field placeholders
+                if "[Missing:" in result:
+                    # Extract missing field names
+                    import re
+                    missing = re.findall(r'\[Missing: ([^\]]+)\]', result)
+                    missing_fields.extend(missing)
+                
+                formatted_parts.append(result)
+            
+            # If there are missing fields, return None to skip this sample
+            if missing_fields:
+                print(f"[INFO] Skipping sample with missing fields: {', '.join(missing_fields)} in dataset '{in_dataset_path}'")
+                return None
+            
             return formatted_parts
         except Exception as e:
             # Handle formatting errors gracefully
@@ -246,17 +296,22 @@ def apply_multipart_template(in_dataset, in_dataset_path, in_multipart_template,
                 f"- Data Row: {x}",
                 f"- Exception: {e}",
             ]))
-            return [''] * len(in_multipart_template)
+            return None
     
-    # Apply the formatting template to each row
-    return in_dataset.map(
+    # Apply the formatting template to each row and filter out None results
+    mapped_dataset = in_dataset.map(
         lambda x: {
             'text_parts': format_template(x),
             'train_mask_parts': in_multipart_train_mask,
             'hf_path': in_dataset_path
         },
         batched=False
-    ).select_columns(['text_parts', 'train_mask_parts', 'hf_path'])
+    )
+    
+    # Filter out samples with missing fields (where text_parts is None)
+    filtered_dataset = mapped_dataset.filter(lambda x: x['text_parts'] is not None)
+    
+    return filtered_dataset.select_columns(['text_parts', 'train_mask_parts', 'hf_path'])
 
 ########################################
 # Actual class implementation
@@ -523,10 +578,12 @@ class TextDatasetStreamer(IterableDataset):
                     mask_value = x['train_mask_parts'][i]
                     all_train_mask.extend([mask_value] * len(part_tokens))
                     
-                    # Add EOS token after each part except the last one
-                    if i < len(x['text_parts']) - 1:
-                        all_input_ids.append(self.tokenizer.eos_token_id)
-                        all_train_mask.append(1)  # EOS tokens are trainable
+                    # We don't add EOS tokens between parts anymore
+                    # This ensures continuous text flow between multipart templates
+                
+                # Add a single EOS token at the end of the entire sequence
+                all_input_ids.append(self.tokenizer.eos_token_id)
+                all_train_mask.append(1)  # EOS token is trainable
                 
                 return {
                     'input_ids': all_input_ids,
@@ -642,9 +699,10 @@ class TextDatasetStreamer(IterableDataset):
                     text_arr.append(sample["text"])
                     sources.append(sample["hf_path"])
 
-                    buffer.extend(sample["input_ids"] + [self.tokenizer.eos_token_id])
-                    train_mask_buffer.extend(sample["train_mask"] + [1])  # EOS token is trainable
-                    current_length += len(sample["input_ids"]) + 1
+                    # EOS is already added in tokenize_with_mask
+                    buffer.extend(sample["input_ids"])
+                    train_mask_buffer.extend(sample["train_mask"])
+                    current_length += len(sample["input_ids"])
 
                 # Extract a full batch from the buffer
                 batch = buffer[:self.packing_context_length * self.packing_batch_size]
@@ -697,9 +755,9 @@ class TextDatasetStreamer(IterableDataset):
                         # Get the next sample
                         sample = next(iterator)
                         
-                        # Get sample tokens with EOS
-                        sample_tokens = sample["input_ids"] + [self.tokenizer.eos_token_id]
-                        sample_train_mask = sample["train_mask"] + [1]  # EOS token is trainable
+                        # Get sample tokens (EOS is already added in tokenize_with_mask)
+                        sample_tokens = sample["input_ids"]
+                        sample_train_mask = sample["train_mask"]
                         
                         # Skip samples that are longer than the context length
                         if len(sample_tokens) > self.packing_context_length:

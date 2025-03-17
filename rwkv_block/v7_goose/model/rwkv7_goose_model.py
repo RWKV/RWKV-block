@@ -59,12 +59,19 @@ class RWKV7GooseModel(nn.Module):
 
         # Freeze full weights if needed
         if configMap.freeze_full_weights:
-            for param in self.parameters():
-                param.requires_grad = False
-
-            if configMap.freeze_wkv_state != True:
-                for i in range(num_hidden_layers):
-                    self.init_state[i]["wkv"].requires_grad = True
+            # Iterate named parameters
+            for name, param in self.named_parameters():
+                # Check if the parameter is not in the init_state
+                if 'init_state' in name:
+                    if configMap.freeze_wkv_state:
+                        # Freeze the parameter
+                        param.requires_grad = False
+                    else:
+                        # Unfreeze the parameter
+                        param.requires_grad = True
+                else:
+                    # Freeze the parameter
+                    param.requires_grad = False
 
 
     def reset_parameters(self):
@@ -159,11 +166,15 @@ class RWKV7GooseModel(nn.Module):
 
             # Use the saved init_state if enabled
             # TODO: Consider letting the wkv_state dtype be a parameter
-            wkv_state = torch.zeros(batch_size, hidden_size // head_size, head_size, head_size, device=device, dtype=torch.float)
             if init_wkv_state and skip_init_state == False:
-                init_wkv = self.init_state[i]["wkv"]
-                for b in range(batch_size):
-                    wkv_state[b][:] = init_wkv
+                # Get a repeated clone view of `self.init_state[i]["wkv"]`
+                wkv_state = self.init_state[i]["wkv"].expand(batch_size, -1, -1, -1).clone()
+                if self.init_state[i]["wkv"].requires_grad:
+                    # If the parameter requires grad, we need to detach it
+                    if wkv_state.requires_grad != True:
+                        raise RuntimeError(f"wkv_state should require grad, but got {wkv_state.requires_grad}")
+            else:
+                wkv_state = torch.zeros(batch_size, hidden_size // head_size, head_size, head_size, device=device, dtype=torch.float)
 
             # Prepare the state
             init_state[i] = (

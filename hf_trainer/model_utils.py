@@ -39,7 +39,8 @@ def load_model_and_tokenizer(
     torch_dtype = torch.bfloat16 if use_amp_bf16 else torch.float32
     
     # Load tokenizer first
-    tokenizer = AutoTokenizer.from_pretrained(hf_model_path)
+    trust_remote_code = model_args.get("trust_remote_code", False)
+    tokenizer = AutoTokenizer.from_pretrained(hf_model_path, trust_remote_code=trust_remote_code)
     
     # Ensure the tokenizer has padding token
     if tokenizer.pad_token is None:
@@ -88,15 +89,19 @@ def load_model_and_tokenizer(
     # Log all parameter names and their requires_grad status
     logger.info("Parameter trainability status:")
     non_trainable_params = []
+    trainable_params = []
     for name, param in model.named_parameters():
-        if not param.requires_grad:
+        if param.requires_grad:
+            trainable_params.append(name)
+        else:
             non_trainable_params.append(name)
-            logger.info(f"  {name}: requires_grad=False")
+        # logger.info(f"- {name}: dtype={param.dtype},requires_grad={param.requires_grad}")
     
     if non_trainable_params:
-        logger.info(f"Non-trainable parameters: {', '.join(non_trainable_params)}")
+        logger.info(f"Non-trainable parameter names: {', '.join(non_trainable_params)}")
     else:
         logger.info("All parameters are trainable")
+    logger.info(f"Trainable parameter names: {', '.join(trainable_params)}")
 
     # Count the trainable parameters
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
