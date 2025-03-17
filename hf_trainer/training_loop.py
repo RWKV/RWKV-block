@@ -200,7 +200,7 @@ def train_model(
     num_training_steps = training_steps
     
     # Calculate effective batch size
-    packing_batch_size = config["dataset"].get("packing_batch_size", 8)
+    packing_batch_size = config["training"].get("microbatch_size", 8)
     total_batch_size = packing_batch_size * gradient_accumulation_steps
     
     logger.info(f"Total training steps: {num_training_steps}")

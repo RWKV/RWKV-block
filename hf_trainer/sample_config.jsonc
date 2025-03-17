@@ -40,7 +40,6 @@
 
   // Dataset configuration (using TextDatasetStreamer)
   "dataset": {
-    "packing_batch_size": 8,
     "packing_context_length": 4096,
     "shuffle_buffer_size": 100,
     "seed": 42,

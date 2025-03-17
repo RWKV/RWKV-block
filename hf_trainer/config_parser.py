@@ -68,7 +68,6 @@ def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
         processed_config["dataset"] = {}
     
     dataset_config = processed_config["dataset"]
-    dataset_config.setdefault("packing_batch_size", 8)
     dataset_config.setdefault("packing_context_length", 4096)
     dataset_config.setdefault("shuffle_buffer_size", 100)
     dataset_config.setdefault("seed", 42)

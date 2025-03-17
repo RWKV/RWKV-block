@@ -421,8 +421,30 @@ class RWKV7Model(RWKV7GooseModel, RWKV7PreTrainedModel):
 
         # ---
 
+        # Ensure gradient flow for x_hidden_state
+        if x_hidden_state.requires_grad == False:
+            x_hidden_state = x_hidden_state.detach()
+            x_hidden_state.requires_grad = True
+
+        # ---
+
         # Block forward, with gradient if needed
         def block_forward(block, in_x_state, in_rwkv_state, in_v_first):
+            
+            # # Gradient check ??
+            # if in_x_state is None:
+            #     raise ValueError("X state is None, cannot forward the block")
+            # if in_rwkv_state is None:
+            #     raise ValueError("RWKV state is None, cannot forward the block")
+            # if in_rwkv_state[1].requires_grad == False:
+            #     raise ValueError("RWKV state is not requiring gradient, cannot forward the block")
+
+            # print(f"Block forward - in_x_state.requires_grad: {in_x_state.requires_grad}")
+            # print(f"Block forward - in_rwkv_state[0].requires_grad: {in_rwkv_state[0].requires_grad}")
+            # print(f"Block forward - in_rwkv_state[1].requires_grad: {in_rwkv_state[1].requires_grad}")
+            # print(f"Block forward - in_rwkv_state[2].requires_grad: {in_rwkv_state[2].requires_grad}")
+            # print(f"Block forward - in_v_first.requires_grad: {in_v_first.requires_grad if in_v_first is not None else None}")
+
             if self.gradient_checkpointing and self.training:
                 return checkpoint(
                     block.__call__, in_x_state, in_rwkv_state, in_v_first

@@ -49,7 +49,7 @@ class RWKV7GooseModel(nn.Module):
             stateTuneList = [None]*num_hidden_layers
             for i in range(num_hidden_layers):
                 stateTuneList[i] = nn.ParameterDict({
-                    "wkv": nn.Parameter(torch.zeros(hidden_size // head_size, head_size, head_size, device=device, dtype=dtype)),
+                    "wkv": nn.Parameter(torch.zeros(hidden_size // head_size, head_size, head_size, device=device, dtype=torch.float)),
                 })
             self.init_state = nn.ParameterList(stateTuneList)
 
@@ -100,17 +100,18 @@ class RWKV7GooseModel(nn.Module):
             self.head.reset_parameters()
 
         # Reinit the init state tuning support
-        if configMap.init_wkv_state:
-            if self.init_state is None:
-                stateTuneList = [None]*num_hidden_layers
-                for i in range(num_hidden_layers):
-                    stateTuneList[i] = nn.ParameterDict({
-                        "wkv": nn.Parameter(torch.zeros(hidden_size // 64, 64, 64, device=device, dtype=torch.float)),
-                    })
-                self.init_state = nn.ParameterList(stateTuneList)
-            else:
-                for i in range(num_hidden_layers):
-                    self.init_state[i]["wkv"].data.copy_(torch.zeros(hidden_size // 64, 64, 64, device=device, dtype=torch.float))
+        with torch.no_grad():
+            if configMap.init_wkv_state:
+                if self.init_state is None:
+                    stateTuneList = [None]*num_hidden_layers
+                    for i in range(num_hidden_layers):
+                        stateTuneList[i] = nn.ParameterDict({
+                            "wkv": nn.Parameter(torch.zeros(hidden_size // 64, 64, 64, device=device, dtype=torch.float)),
+                        })
+                    self.init_state = nn.ParameterList(stateTuneList)
+                else:
+                    for i in range(num_hidden_layers):
+                        self.init_state[i]["wkv"].data.copy_(torch.zeros(hidden_size // 64, 64, 64, device=device, dtype=torch.float))
 
     def load_from_model_state_dict(self, state_dict: dict, non_blocking:bool=True):
         '''
@@ -168,7 +169,7 @@ class RWKV7GooseModel(nn.Module):
             # TODO: Consider letting the wkv_state dtype be a parameter
             if init_wkv_state and skip_init_state == False:
                 # Get a repeated clone view of `self.init_state[i]["wkv"]`
-                wkv_state = self.init_state[i]["wkv"].expand(batch_size, -1, -1, -1).clone()
+                wkv_state = self.init_state[i]["wkv"].expand(batch_size, -1, -1, -1).clone().float()
                 if self.init_state[i]["wkv"].requires_grad:
                     # If the parameter requires grad, we need to detach it
                     if wkv_state.requires_grad != True:

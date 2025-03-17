@@ -214,7 +214,7 @@ def main():
         dataset = TextDatasetStreamer(
             dataset_configs=config["dataset"]["datasets"],
             tokenizer=tokenizer,
-            packing_batch_size=config["dataset"].get("packing_batch_size", 8),
+            packing_batch_size=config["training"].get("microbatch_size", 8),
             packing_context_length=config["dataset"].get("packing_context_length", 4096),
             shuffle_buffer_size=config["dataset"].get("shuffle_buffer_size", 100),
             seed=config["dataset"].get("seed", 42),
