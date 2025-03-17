@@ -27,6 +27,8 @@ class Qwerky6BlockConfigMap(RWKV6BlockConfigMap):
         # attention_bias: bool = True,
         # attention_output_bias: bool = False,
         head_size: int = 128,
+        d_mix_lora: int = 96,
+        d_decay_lora: int = 64,
         **kargs
     ):
         '''
@@ -34,6 +36,8 @@ class Qwerky6BlockConfigMap(RWKV6BlockConfigMap):
         And alias for hidden_size_mlp
         '''
         self.rms_norm_eps = rms_norm_eps
+        self.d_mix_lora = d_mix_lora
+        self.d_decay_lora = d_decay_lora
         # self.attention_bias = attention_bias
         # self.attention_output_bias = attention_output_bias
         super().__init__(num_hidden_layers, hidden_size, head_size=head_size, **kargs)

@@ -69,20 +69,20 @@ class Qwerky6TimeMix(torch.nn.Module):
 
         with torch.no_grad():
             # Note: for some data, you can reduce D_GATE_LORA or even remove this gate
-            D_MIX_LORA = 128
-            D_DECAY_LORA = 128
+            D_MIX_LORA = configMap.d_mix_lora
+            D_DECAY_LORA = configMap.d_decay_lora
 
             
-            self.time_maaa_r = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.time_maaa_w = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.time_maaa_k = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.time_maaa_v = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.time_maaa_a = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.time_maaa_g = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
-            self.time_maaa_x = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maa_r = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maa_w = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maa_k = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maa_v = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maa_a = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maa_g = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
+            self.time_maa_x = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
             
-            self.time_maaa_w2 = nn.Parameter(torch.empty(5, D_MIX_LORA, hidden_size, device=device, dtype=dtype))
-            self.time_maaa_w1 = nn.Parameter(torch.empty(hidden_size, D_MIX_LORA * self.x_w2.size(0), device=device, dtype=dtype))
+            self.time_maa_w2 = nn.Parameter(torch.empty(5, D_MIX_LORA, hidden_size, device=device, dtype=dtype))
+            self.time_maa_w1 = nn.Parameter(torch.empty(hidden_size, D_MIX_LORA * self.time_maa_w2.size(0), device=device, dtype=dtype))
 
             self.time_decay = nn.Parameter(torch.empty(1,1,hidden_size, device=device, dtype=dtype))
             self.time_decay_w1 = nn.Parameter(torch.empty(hidden_size, D_DECAY_LORA, device=device, dtype=dtype))
@@ -126,11 +126,11 @@ class Qwerky6TimeMix(torch.nn.Module):
             for i in range(hidden_size):
                 ddd[0, 0, i] = i / hidden_size
 
-            self.time_maaa_r.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
-            self.time_maaa_w.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
-            self.time_maaa_k.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
-            self.time_maaa_v.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
-            self.time_maaa_a.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
+            self.time_maa_r.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
+            self.time_maa_w.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
+            self.time_maa_k.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
+            self.time_maa_v.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
+            self.time_maa_a.data = 1.0 - torch.pow(ddd, ratio_1_to_almost0)
 
             # idk what goes here TODO
 
@@ -180,16 +180,16 @@ class Qwerky6TimeMix(torch.nn.Module):
         shift_state_out = x[:, -1]
         dxprev = torch.concat((shift_state_in.unsqueeze(1), x[:, :-1]), dim=1) - x
 
-        xxx = x + dxprev * self.x_x
-        xxx = torch.tanh(xxx @ self.x_w1).view(BATCH_SIZE*SEQ_LEN, 5, -1).transpose(0, 1)
-        xxx = torch.bmm(xxx, self.x_w2).view(5, BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE)
+        xxx = x + dxprev * self.time_maa_x
+        xxx = torch.tanh(xxx @ self.time_maa_w1).view(BATCH_SIZE*SEQ_LEN, 5, -1).transpose(0, 1)
+        xxx = torch.bmm(xxx, self.time_maa_w2).view(5, BATCH_SIZE, SEQ_LEN, IN_EMB_SIZE)
 
         mw, mk, mv, mr, mg = xxx.unbind(dim=0)
-        xw = x + dxprev * (self.time_maaa_w + mw)
-        xk = x + dxprev * (self.time_maaa_k + mk)
-        xv = x + dxprev * (self.time_maaa_v + mv)
-        xr = x + dxprev * (self.time_maaa_r + mr)
-        xg = x + dxprev * (self.time_maaa_g + mg)
+        xw = x + dxprev * (self.time_maa_w + mw)
+        xk = x + dxprev * (self.time_maa_k + mk)
+        xv = x + dxprev * (self.time_maa_v + mv)
+        xr = x + dxprev * (self.time_maa_r + mr)
+        xg = x + dxprev * (self.time_maa_g + mg)
         decay_states = (
             self.time_decay +
             torch.tanh(xw @ self.time_decay_w1) @ self.time_decay_w2)
@@ -211,8 +211,8 @@ class Qwerky6TimeMix(torch.nn.Module):
                                          self.head_size).transpose(1, 2)
 
         # repeat k/v heads if n_kv_heads < n_heads
-        key_states = repeat_kv(key_states, self.num_key_value_groups)
-        value_states = repeat_kv(value_states, self.num_key_value_groups)
+        key_states = repeat_kv(key_states, self.n_gqa_head_group)
+        value_states = repeat_kv(value_states, self.n_gqa_head_group)
 
         decay_states_log = -decay_states.float().exp()
         decay_states_log = decay_states_log.clamp(-5)
