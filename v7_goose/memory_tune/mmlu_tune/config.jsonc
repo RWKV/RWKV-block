@@ -11,32 +11,37 @@
       "model_args": {
         "trust_remote_code": true,
         
+        // Reduce warnings on use_cache
+        "use_cache": false,
+
         // Add any other model-specific arguments here
         "freeze_full_weights": true,
         "freeze_wkv_state": false,
-        "init_wkv_state": true
+        "init_wkv_state": true,
+        // tmix_backend overwrites
+        "tmix_backend": "cuda"
       }
     },
   
     // Training configuration
     "training": {
       "gradient_accumulation_steps": 1,
-      "training_steps": 10000,  // Total number of training steps
-      "save_steps": 500,
-      "save_total_limit": 10,
-      "logging_steps": 10,
-      "microbatch_size": 1,  // Number of samples processed at once
+      "training_steps": 100,  // Total number of training steps
+      "save_steps": 5,
+      "save_total_limit": 50,
+      "logging_steps": 5,
+      "microbatch_size": 4,  // Number of samples processed at once
       "output_dir": "./output"
     },
   
     // Optimizer and scheduler configuration
     "optimizer": {
       "name": "adamw",  // Options: adamw, adafactor, sgd, adam
-      "max_learning_rate": 5e-5,  // Learning rate after warmup
-      "min_learning_rate": 1e-6,  // Final learning rate after cosine decay
-      "warmup_steps": 500,  // Number of warmup steps
+      "max_learning_rate": 1e-6,  // Learning rate after warmup
+      "min_learning_rate": 1e-7,  // Final learning rate after cosine decay
+      "warmup_steps": 40,    // Number of warmup steps
       "scheduler": "cosine",  // Options: linear, cosine, constant, constant_with_warmup
-      "weight_decay": 0.01,
+      "weight_decay": 0.2,
       "beta1": 0.9,
       "beta2": 0.999,
       "epsilon": 1e-8
@@ -44,11 +49,10 @@
   
     // Dataset configuration (using TextDatasetStreamer)
     "dataset": {
-      "packing_batch_size": 1,
-      "packing_context_length": 1024,
+      "packing_context_length": 2048,
       "packing_mode": "preserve",
-      "shuffle_buffer_size": 10,
-      "seed": 42,
+      "shuffle_buffer_size": 500,
+      "seed": 24142,
       "datasets": [
           {
               "hf_path": "cais/mmlu",

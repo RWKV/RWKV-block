@@ -2,6 +2,7 @@
 .*
 __*__
 **/wandb/**
+**/output/**
 
 # Add back .gitignore
 !.gitignore
