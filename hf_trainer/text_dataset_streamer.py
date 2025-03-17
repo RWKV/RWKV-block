@@ -19,6 +19,10 @@ import torch.multiprocessing as mp
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+########################################
+# Templating / Utility functions
+########################################
+
 class TemplateFormatter:
     """
     A custom template formatter that extends Python's string formatting capabilities.
@@ -224,6 +228,40 @@ class TemplateFormatter:
         # Replace all placeholders in the template
         return cls.PLACEHOLDER_PATTERN.sub(replace_placeholder, template)
 
+# Apply template function encapsulation
+# to avoid template scope leakage
+def apply_multipart_template(in_dataset, in_dataset_path, in_multipart_template, in_multipart_train_mask):
+    def format_template(x):
+        try:
+            # Process multipart template
+            formatted_parts = []
+            for template_part in in_multipart_template:
+                formatted_parts.append(TemplateFormatter.format_template(template_part, x))
+            return formatted_parts
+        except Exception as e:
+            # Handle formatting errors gracefully
+            print("\n".join([
+                f"[WARNING] Error in formatting template, skipping data row",
+                f"- Template: {in_multipart_template}",
+                f"- Data Row: {x}",
+                f"- Exception: {e}",
+            ]))
+            return [''] * len(in_multipart_template)
+    
+    # Apply the formatting template to each row
+    return in_dataset.map(
+        lambda x: {
+            'text_parts': format_template(x),
+            'train_mask_parts': in_multipart_train_mask,
+            'hf_path': in_dataset_path
+        },
+        batched=False
+    ).select_columns(['text_parts', 'train_mask_parts', 'hf_path'])
+
+########################################
+# Actual class implementation
+########################################
+
 class TextDatasetStreamer(IterableDataset):
     """
     A PyTorch IterableDataset for streaming and processing HuggingFace Text datasets.
@@ -283,6 +321,10 @@ class TextDatasetStreamer(IterableDataset):
                 - template (optional): A string template for formatting dataset rows. Uses Python's string formatting 
                   syntax with named placeholders corresponding to dataset column names (e.g., "{text}", "{url}").
                   If not provided, a default template is generated based on available column names.
+                - multipart_template (optional): An array of string templates for formatting dataset rows into multiple parts.
+                  Cannot be used together with 'template'.
+                - multipart_train_mask (optional): An array of boolean values (0 or 1) indicating whether each part of the
+                  multipart_template should be used for training. Must have the same length as multipart_template.
                 - min_length (optional): Minimum token length for filtering. Default is 1.
                 - max_length (optional): Maximum token length for filtering. Default is infinity.
                 - weight (optional): Weight for this dataset when interleaving. Default is 1.0.
@@ -296,6 +338,11 @@ class TextDatasetStreamer(IterableDataset):
                 - Array indexing: "Question: {questions[0].text}\nOptions: {options[0]}, {options[1]}, {options[2]}"
                 - Numeric to letter conversion: "Answer: {to_letter(answer_index)}" (0 → A, 1 → B, etc.)
                 - Lowercase letters: "Choice: {to_letter(choice, case='lower')}" (0 → a, 1 → b, etc.)
+                
+                Multipart Template Examples:
+                - Question-Answer pair with training only on the answer:
+                  multipart_template: ["### Question:\n{question}\n\n### Answer:\n", "{answer}"]
+                  multipart_train_mask: [0, 1]
                 
             tokenizer: An AutoTokenizer instance or a string specifying the tokenizer name.
             tokenizer_args: Optional arguments to pass to the tokenizer. Used only when tokenizer is a string.
@@ -393,11 +440,28 @@ class TextDatasetStreamer(IterableDataset):
             one_dataset = one_dataset.shard(num_shards=self.world_size, index=self.rank)
 
             # Get and Apply the formatting template
-            # The template is a string with Python's string formatting syntax using named placeholders
-            # that correspond to dataset column names, e.g., "{text}", "{url}", "{instruction}", etc.
+            # Check for multipart_template and multipart_train_mask
+            ds_multipart_template = ds_config.get('multipart_template', None)
+            ds_multipart_train_mask = ds_config.get('multipart_train_mask', None)
             ds_template = ds_config.get('template', None)
-            if ds_template is None:
-                    
+            
+            # Validate template configuration
+            if ds_template is not None and ds_multipart_template is not None:
+                raise ValueError("Cannot provide both 'template' and 'multipart_template' in dataset configuration.")
+            
+            # Convert single template to multipart if needed
+            if ds_template is not None:
+                ds_multipart_template = [ds_template]
+                ds_multipart_train_mask = [1]  # All tokens trainable for single template
+            elif ds_multipart_template is not None:
+                # Validate multipart configuration
+                if ds_multipart_train_mask is None:
+                    raise ValueError("'multipart_train_mask' must be provided when using 'multipart_template'.")
+                
+                if len(ds_multipart_template) != len(ds_multipart_train_mask):
+                    raise ValueError("'multipart_template' and 'multipart_train_mask' must have the same length.")
+            else:
+                # No template provided, generate a default one
                 # Check the column names, if given
                 # Otherwise sample the first row to get them
                 ds_column_names = one_dataset.column_names
@@ -419,59 +483,45 @@ class TextDatasetStreamer(IterableDataset):
                         ds_template += 'url: {url}\n'
                         ds_template += '---\n'
                     ds_template += '{text}'
-
-            # Check if the template is empty, then raise an error
-            # This happens if no template was provided and no 'text' column was found
-            if ds_template == '':
-                raise ValueError("Template is empty and no 'text' column found in dataset.")
-
-            # Apply template function encapsulation
-            # to avoid ds_template scope leakage
-            def apply_template(in_dataset, in_dataset_path, in_template):
-                def format_template(x):
-                    try:
-                        # Use the enhanced TemplateFormatter to format the template
-                        # This supports:
-                        # 1. Nested dictionary access with dot notation: {metadata.author}
-                        # 2. Array indexing: {questions[0].text}
-                        # 3. Function calls: {to_letter(score, case='upper')}
-                        return TemplateFormatter.format_template(in_template, x)
-                    except Exception as e:
-                        # Handle formatting errors gracefully:
-                        # - Missing keys in the dataset row
-                        # - Type errors during formatting
-                        # - Other formatting exceptions
-                        # 
-                        # Instead of failing, we log the error and return an empty string
-                        # which will result in this row being filtered out later due to
-                        # having zero tokens after tokenization
-                        print("\n".join([
-                            f"[WARNING] Error in formatting template, skipping data row",
-                            f"- Template: {in_template}",
-                            f"- Data Row: {x}",
-                            f"- Exception: {e}",
-                        ]))
-                        return ''
                 
-                # Apply the formatting template to each row in the dataset
-                # This transforms the dataset by:
-                # 1. Applying the template to each row
-                # 2. Creating a new 'text' field with the formatted result
-                # 3. Adding 'hf_path' to track the source dataset
-                # 4. Selecting only these two columns for further processing
-                return in_dataset.map(
-                    lambda x: { 'text': format_template(x), 'hf_path': in_dataset_path },
-                    batched=False
-                ).select_columns(['text', 'hf_path'])
-            
-            # Apply the template to the dataset
-            one_dataset = apply_template(one_dataset, hf_path, ds_template)
+                # Convert to multipart
+                if ds_template != '':
+                    ds_multipart_template = [ds_template]
+                    ds_multipart_train_mask = [1]  # All tokens trainable for default template
+                else:
+                    raise ValueError("Template is empty and no 'text' column found in dataset.")
 
-            # Tokenize the text, via a single process
-            one_dataset = one_dataset.map(
-                lambda x: { 'input_ids': self.thread_safe_tokenizer_encode(x['text']) },
-                batched=False
-            )
+            # Apply the template to the dataset
+            one_dataset = apply_multipart_template(one_dataset, hf_path, ds_multipart_template, ds_multipart_train_mask)
+
+            # Tokenize the text parts and create the train mask
+            def tokenize_with_mask(x):
+                all_input_ids = []
+                all_train_mask = []
+                
+                # Process each part
+                for i, part in enumerate(x['text_parts']):
+                    # Tokenize the part
+                    part_tokens = self.thread_safe_tokenizer_encode(part)
+                    all_input_ids.extend(part_tokens)
+                    
+                    # Add train mask based on the mask value for this part
+                    mask_value = x['train_mask_parts'][i]
+                    all_train_mask.extend([mask_value] * len(part_tokens))
+                    
+                    # Add EOS token after each part except the last one
+                    if i < len(x['text_parts']) - 1:
+                        all_input_ids.append(self.tokenizer.eos_token_id)
+                        all_train_mask.append(1)  # EOS tokens are trainable
+                
+                return {
+                    'input_ids': all_input_ids,
+                    'train_mask': all_train_mask,
+                    'text': ''.join(x['text_parts'])  # Join parts for display purposes
+                }
+
+            # Apply tokenization
+            one_dataset = one_dataset.map(tokenize_with_mask, batched=False)
 
             # Filter by token length if specified
             min_length = ds_config.get('min_length', 1)
@@ -547,6 +597,7 @@ class TextDatasetStreamer(IterableDataset):
         # Time to do some packing
         # ------------------------
         buffer = []
+        train_mask_buffer = []
         current_length = 0
 
         # Full target buffer size
@@ -566,16 +617,21 @@ class TextDatasetStreamer(IterableDataset):
                     sources.append(sample["hf_path"])
 
                     buffer.extend(sample["input_ids"] + [self.tokenizer.eos_token_id])
+                    train_mask_buffer.extend(sample["train_mask"] + [1])  # EOS token is trainable
                     current_length += len(sample["input_ids"]) + 1
 
                 # Extract a full batch from the buffer
                 batch = buffer[:self.packing_context_length * self.packing_batch_size]
+                train_mask_batch = train_mask_buffer[:self.packing_context_length * self.packing_batch_size]
+                
                 buffer = buffer[self.packing_context_length * self.packing_batch_size:]
+                train_mask_buffer = train_mask_buffer[self.packing_context_length * self.packing_batch_size:]
                 current_length = len(buffer)
 
                 # Yield the batch as a tensor
                 yield {
                     "input_ids": torch.tensor(batch, dtype=torch.long).reshape(self.packing_batch_size, self.packing_context_length),
+                    "train_mask": torch.tensor(train_mask_batch, dtype=torch.bool).reshape(self.packing_batch_size, self.packing_context_length),
                     "text_arr": text_arr,
                     "source_arr": sources
                 }
@@ -586,6 +642,7 @@ class TextDatasetStreamer(IterableDataset):
                 self.reshuffle_dataset()
                 iterator = iter(self.full_dataset)
                 buffer = []
+                train_mask_buffer = []
                 current_length = 0
 
     def __len__(self):
