@@ -5,12 +5,17 @@ from torch.nn import functional as F
 from torch import nn
 
 from transformers.models.qwen2.modeling_qwen2 import repeat_kv
-from transformers.models.qwen2.modeling_qwen2 import apply_rotary_pos_emb
-
-from rwkv_block.v5_eagle.block.rwkv5_optimized_ops import RWKVx060_reshape_run
 
 from .qwerky6_block_config_map import Qwerky6BlockConfigMap
 from fla.ops.gla import fused_recurrent_gla
+from fla.ops.gla.naive import naive_recurrent_gla
+
+_time_mix_backends = {
+    'naive': naive_recurrent_gla,
+    'fused': fused_recurrent_gla,
+    "auto": fused_recurrent_gla if torch.cuda.is_available() else naive_recurrent_gla
+}
+
 class Qwerky6TimeMix(torch.nn.Module):
     '''
     Time Mix block for QWERKY V6
@@ -57,7 +62,7 @@ class Qwerky6TimeMix(torch.nn.Module):
         self.n_gqa_head_group = n_gqa_head_group
 
         # Backend
-        self.tmix_backend = configMap.tmix_backend
+        self.tmix_backend = _time_mix_backends[configMap.tmix_backend]
 
         # Linear module function
         # This is used to replace the linear module, with a custom implementation
@@ -223,10 +228,11 @@ class Qwerky6TimeMix(torch.nn.Module):
         value_states = value_states.to(torch.bfloat16)
 
         output_final_state = True
-        attn_output, output_kv_state = fused_recurrent_gla(
-            query_states, key_states, value_states, decay_states_log.float(),
-            None, None, wkv_state_in, output_final_state)
+        attn_output, output_kv_state = self.tmix_backend(
+            q=query_states, k=key_states, v=value_states, gk=decay_states_log.float(),
+            initial_state=wkv_state_in, output_final_state=output_final_state)
 
+        attn_output = attn_output.transpose(1, 2).reshape(BATCH_SIZE, SEQ_LEN, -1)
         x = self.o_proj(attn_output * gate_states)
 
         return x, shift_state_out, output_kv_state
