@@ -5,7 +5,7 @@ from typing import Union
 from torch.nn import functional as F
 
 from .rwkv5_block_config_map import RWKV5BlockConfigMap
-from .rwkv5_optimized_ops import modified_lerp, RWKVx060_chunk
+from .rwkv5_optimized_ops import modified_lerp, RWKVx050_chunk
 
 class RWKV5TimeMix(torch.nn.Module):
     '''
@@ -131,7 +131,7 @@ class RWKV5TimeMix(torch.nn.Module):
         wkv_state_out = wkv_state_in.to(r.dtype)
 
         # RWKVx060 optimized kernels (backward compatible with RWKVx050)
-        x_logits, wkv_state_out = RWKVx060_chunk(r, k, v, w, u, wkv_state_out, backend=self.tmix_backend) 
+        x_logits, wkv_state_out = RWKVx050_chunk(r, k, v, w, u, wkv_state_out, backend=self.tmix_backend) 
         x_logits = x_logits.transpose(1,2).reshape(B,T,C)
 
         # Reshape and normalize the logits

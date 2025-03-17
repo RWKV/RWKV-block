@@ -24,22 +24,22 @@ def load_model_and_tokenizer(
     Returns:
         Tuple of (model, tokenizer)
     """
-    name_or_path = model_config["name_or_path"]
-    logger.info(f"Loading model and tokenizer from {name_or_path}")
+    hf_model_path = model_config["hf_model_path"]
+    logger.info(f"Loading model and tokenizer from {hf_model_path}")
     
     # Extract model-specific arguments
     model_args = model_config.get("model_args", {})
     
     # Determine precision settings
-    use_bf16 = model_config.get("use_bf16", True)
+    use_amp_bf16 = model_config.get("use_amp_bf16", False)
     load_in_8bit = model_config.get("load_in_8bit", False)
     load_in_4bit = model_config.get("load_in_4bit", False)
     
     # Set torch dtype based on precision settings
-    torch_dtype = torch.bfloat16 if use_bf16 else torch.float32
+    torch_dtype = torch.bfloat16 if use_amp_bf16 else torch.float32
     
     # Load tokenizer first
-    tokenizer = AutoTokenizer.from_pretrained(name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(hf_model_path)
     
     # Ensure the tokenizer has padding token
     if tokenizer.pad_token is None:
@@ -63,7 +63,7 @@ def load_model_and_tokenizer(
     
     # Load the model
     model = AutoModelForCausalLM.from_pretrained(
-        name_or_path,
+        hf_model_path,
         **model_load_args
     )
     
@@ -83,7 +83,28 @@ def load_model_and_tokenizer(
     # Log model and tokenizer information
     logger.info(f"Model loaded: {model.__class__.__name__}")
     logger.info(f"Tokenizer loaded: {tokenizer.__class__.__name__}")
-    logger.info(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    logger.info(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    # Log all parameter names and their requires_grad status
+    logger.info("Parameter trainability status:")
+    non_trainable_params = []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            non_trainable_params.append(name)
+            logger.info(f"  {name}: requires_grad=False")
+    
+    if non_trainable_params:
+        logger.info(f"Non-trainable parameters: {', '.join(non_trainable_params)}")
+    else:
+        logger.info("All parameters are trainable")
+
+    # Count the trainable parameters
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logger.info(f"Trainable parameters: {trainable_params:,}")
+
+    # Throw if there are no trainable parameters
+    if trainable_params == 0:
+        raise ValueError("No trainable parameters found in the model. Check your model configuration.")
     
     return model, tokenizer
 
@@ -93,7 +114,8 @@ def save_model_checkpoint(
     output_dir: str,
     step: Optional[int] = None,
     epoch: Optional[int] = None,
-    is_final: bool = False
+    is_final: bool = False,
+    save_full_weights: bool = False
 ) -> str:
     """
     Save a model checkpoint.
@@ -105,6 +127,7 @@ def save_model_checkpoint(
         step: Current training step (optional)
         epoch: Current epoch (optional)
         is_final: Whether this is the final checkpoint
+        save_full_weights: Whether to save all weights or only trainable weights (default: False)
         
     Returns:
         Path to the saved checkpoint
@@ -122,11 +145,42 @@ def save_model_checkpoint(
     # Create directory if it doesn't exist
     os.makedirs(checkpoint_dir, exist_ok=True)
     
-    logger.info(f"Saving model checkpoint to {checkpoint_dir}")
+    if save_full_weights:
+        logger.info(f"Saving full model weights to {checkpoint_dir}")
+        # Save all weights
+        model.save_pretrained(checkpoint_dir, state_dict=model.state_dict())
+    else:
+        # Get a set of names of parameters that require gradients
+        trainable_param_names = set()
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                trainable_param_names.add(name)
+        
+        # Save only trainable weights by filtering state_dict using the parameter names
+        state_dict = model.state_dict()
+        trainable_state_dict = {}
+        
+        # Note: For GPT-2 models, lm_head.weight is typically tied to the embedding weights
+        # but appears separately in the state_dict. It may not be directly accessible through
+        # named_parameters(), which is why it might show as "missing" (148/149 parameters).
+        # This is expected behavior for GPT-2 models.
+        
+        for k, v in state_dict.items():
+            # Check if this key exactly matches a parameter name or
+            # if it's a key that contains a trainable parameter name
+            # (handles cases where state_dict keys might have prefixes)
+            if k in trainable_param_names or any(param_name in k for param_name in trainable_param_names):
+                trainable_state_dict[k] = v
+        
+        # Count parameters
+        total_params = len(state_dict)
+        trainable_params = len(trainable_state_dict)
+        
+        logger.info(f"Saving trainable weights to {checkpoint_dir} ({trainable_params}/{total_params} parameters)")
+        model.save_pretrained(checkpoint_dir, state_dict=trainable_state_dict)
     
-    # Save model and tokenizer
-    model.save_pretrained(checkpoint_dir)
-    tokenizer.save_pretrained(checkpoint_dir)
+    # -- We do not need to save the tokenizer
+    # tokenizer.save_pretrained(checkpoint_dir)
     
     return checkpoint_dir
 
@@ -148,7 +202,7 @@ def load_checkpoint(
     
     # Update the model path in the config
     updated_config = model_config.copy()
-    updated_config["name_or_path"] = checkpoint_path
+    updated_config["hf_model_path"] = checkpoint_path
     
     # Load model and tokenizer
     return load_model_and_tokenizer(updated_config)

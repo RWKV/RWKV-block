@@ -9,8 +9,34 @@ from ..block.rwkv6_block_config_map import RWKV6BlockConfigMap
 class RWKV6FinchConfigMap(RWKV6BlockConfigMap):
     # This is the world tokenizer size
     vocab_size: int = 65536 
-    init_wkv_state: bool = False
+    forward_chunk_size: int = 4096
 
+    init_wkv_state: bool      = False # Include init WKV state within the model
+    freeze_wkv_state: bool    = True  # Freeze the WKV state, require init_wkv_state=True
+    freeze_full_weights: bool = False # Freeze the model training weights
+    
+    # ---
+    # Initializer, with excess arg ignore
+    # ---
+    def __init__(
+        self,
+        vocab_size: int = 65536,
+        forward_chunk_size: Optional[int] = 4096,
+
+        init_wkv_state: bool = False,
+        freeze_wkv_state: bool = True,
+        freeze_full_weights: bool = False,
+        **kwargs
+    ) -> None:
+        self.vocab_size = vocab_size
+        self.forward_chunk_size = forward_chunk_size
+
+        self.init_wkv_state = init_wkv_state
+        self.freeze_wkv_state = freeze_wkv_state
+        self.freeze_full_weights = freeze_full_weights
+        
+        super().__init__(**kwargs)
+        
     @staticmethod
     def normalize(config_map: any) -> 'RWKV6FinchConfigMap':
         '''
@@ -57,6 +83,9 @@ class RWKV6FinchConfigMap(RWKV6BlockConfigMap):
             hidden_size_att=state_dict['blocks.0.att.key.weight'].shape[0],
             hidden_size_ffn=state_dict['blocks.0.ffn.key.weight'].shape[0],
 
+            tmix_maa_dim=state_dict['blocks.0.att.time_maa_w2'].shape[1],
+            tmix_decay_dim=state_dict['blocks.0.att.time_decay_w1'].shape[1],
+            
             **kwargs
         )
         
