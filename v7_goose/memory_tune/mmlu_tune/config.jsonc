@@ -1,0 +1,81 @@
+{
+    // Model configuration
+    "model": {
+      "hf_model_path": "RWKV/v7-Goose-2B9-HF",  // HF model name or local path
+      "use_amp_bf16": false,
+      "load_in_8bit": false,
+      "load_in_4bit": false,
+      "force_cpu": false,  // Set to true to force CPU usage even if CUDA is available
+      
+      // Model-specific arguments passed directly to from_pretrained
+      "model_args": {
+        "trust_remote_code": true,
+        
+        // Add any other model-specific arguments here
+        "freeze_full_weights": true,
+        "freeze_wkv_state": false,
+        "init_wkv_state": true
+      }
+    },
+  
+    // Training configuration
+    "training": {
+      "gradient_accumulation_steps": 1,
+      "training_steps": 10000,  // Total number of training steps
+      "save_steps": 500,
+      "save_total_limit": 10,
+      "logging_steps": 10,
+      "microbatch_size": 1,  // Number of samples processed at once
+      "output_dir": "./output"
+    },
+  
+    // Optimizer and scheduler configuration
+    "optimizer": {
+      "name": "adamw",  // Options: adamw, adafactor, sgd, adam
+      "max_learning_rate": 5e-5,  // Learning rate after warmup
+      "min_learning_rate": 1e-6,  // Final learning rate after cosine decay
+      "warmup_steps": 500,  // Number of warmup steps
+      "scheduler": "cosine",  // Options: linear, cosine, constant, constant_with_warmup
+      "weight_decay": 0.01,
+      "beta1": 0.9,
+      "beta2": 0.999,
+      "epsilon": 1e-8
+    },
+  
+    // Dataset configuration (using TextDatasetStreamer)
+    "dataset": {
+      "packing_batch_size": 1,
+      "packing_context_length": 1024,
+      "packing_mode": "preserve",
+      "shuffle_buffer_size": 10,
+      "seed": 42,
+      "datasets": [
+          {
+              "hf_path": "cais/mmlu",
+              "hf_args": {
+                  "name": "auxiliary_train",
+                  "split": "train",
+                  "streaming": true
+              },
+              // Using multipart template with train mask
+              "multipart_template": [
+                  "The following are multiple choice questions (with answers) about {train.subject}.\n\n{train.question}\nA. {train.choices[0]}\nB. {train.choices[1]}\nC. {train.choices[2]}\nD. {train.choices[3]}\nAnswer: ",
+                  "{to_letter(train.answer, case='upper')}"
+              ],
+              "multipart_train_mask": [0, 1],  // Only train on the answer part
+              "weight": 1.0
+          }
+      ]
+    },
+  
+    // Logging configuration
+    "logging": {
+      "wandb": {
+        "enabled": false,
+        "project": "hf-trainer",
+        "name": "training-run-1",
+        "entity": null,  // Your W&B username or team name
+        "tags": ["mmlu", "memory-tune"]
+      }
+    }
+  }
