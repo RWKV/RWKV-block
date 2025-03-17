@@ -1,11 +1,8 @@
 {
   // Model configuration
   "model": {
-    "name_or_path": "gpt2",  // Small GPT2 model
-    "use_bf16": false,  // Disable BF16 for CPU training
-    "load_in_8bit": false,
-    "load_in_4bit": false,
-    "force_cpu": true,  // Force CPU usage even if CUDA is available
+    "hf_model_path": "gpt2",  // Small GPT2 model
+    "use_amp_bf16": false,  // Disable BF16 for GPT2 training
     
     // Model-specific arguments
     "model_args": {
@@ -15,31 +12,26 @@
 
   // Training configuration
   "training": {
-    "learning_rate": 5e-5,
-    "weight_decay": 0.01,
-    "num_train_epochs": 1,  // Just one epoch for testing
     "gradient_accumulation_steps": 2,
-    "warmup_steps": 10,
-    "max_steps": 20,  // Limited steps for testing
+    "training_steps": 50,  // Limited steps for testing
     "save_steps": 10,
-    "save_total_limit": 1,
+    "save_total_limit": 2,
     "logging_steps": 5,
     "microbatch_size": 1,
-    "output_dir": "./test_output"
+    "output_dir": "./output"
   },
 
-  // Optimizer configuration
+  // Optimizer and scheduler configuration
   "optimizer": {
     "name": "adamw",
+    "max_learning_rate": 5e-5,  // Learning rate after warmup
+    "min_learning_rate": 1e-6,  // Final learning rate after cosine decay
+    "warmup_steps": 10,  // Number of warmup steps
+    "scheduler": "cosine",  // Options: linear, cosine, constant, constant_with_warmup
+    "weight_decay": 0.01,
     "beta1": 0.9,
     "beta2": 0.999,
     "epsilon": 1e-8
-  },
-
-  // Scheduler configuration
-  "scheduler": {
-    "name": "cosine",
-    "num_warmup_steps": 10
   },
 
   // Dataset configuration (using TextDatasetStreamer)
@@ -66,8 +58,5 @@
     "wandb": {
       "enabled": false
     }
-  },
-  
-  // Estimated dataset size (used to calculate number of steps)
-  "estimated_dataset_size": 10000
+  }
 }
