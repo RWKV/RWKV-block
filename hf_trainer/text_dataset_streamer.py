@@ -298,6 +298,7 @@ class TextDatasetStreamer(IterableDataset):
         packing_batch_size: int = 8,
         packing_context_length: int = 4096,
         packing_skip: bool = False, # Skip packing if True (used for debugging)
+        packing_mode: str = 'split', # Packing mode: 'split' (default) or 'preserve'
         
         # Shuffling parameters
         shuffle_buffer_size: int = 100,
@@ -352,6 +353,10 @@ class TextDatasetStreamer(IterableDataset):
             packing_batch_size: The number of sequences in each batch.
             packing_context_length: The maximum length of each sequence.
             packing_skip: Skip packing if True (used for debugging).
+            packing_mode: The packing mode to use. Options:
+                - 'split' (default): Samples can be split across batch boundaries.
+                - 'preserve': Samples are preserved as complete units and never split. Samples longer than
+                  the context length are skipped. Remaining space in a sequence is padded.
 
             shuffle_buffer_size: The size of the buffer used for shuffling.
             seed: The random seed used for shuffling.
@@ -377,6 +382,7 @@ class TextDatasetStreamer(IterableDataset):
         self.packing_batch_size = packing_batch_size
         self.packing_context_length = packing_context_length
         self.packing_skip = packing_skip
+        self.packing_mode = packing_mode
 
         self.shuffle_buffer_size = shuffle_buffer_size
         self.seed = seed
@@ -594,8 +600,20 @@ class TextDatasetStreamer(IterableDataset):
                     self.reshuffle_dataset()
                     iterator = iter(self.full_dataset)
 
-        # Time to do some packing
-        # ------------------------
+        # Choose packing mode
+        if self.packing_mode == 'split':
+            # Original packing mode where samples can be split across batch boundaries
+            yield from self._iter_split_mode(iterator)
+        elif self.packing_mode == 'preserve':
+            # New packing mode where samples are preserved as complete units
+            yield from self._iter_preserve_mode(iterator)
+        else:
+            raise ValueError(f"Unknown packing mode: {self.packing_mode}. Expected 'split' or 'preserve'.")
+    
+    def _iter_split_mode(self, iterator):
+        """
+        Original packing mode where samples can be split across batch boundaries.
+        """
         buffer = []
         train_mask_buffer = []
         current_length = 0
@@ -644,6 +662,79 @@ class TextDatasetStreamer(IterableDataset):
                 buffer = []
                 train_mask_buffer = []
                 current_length = 0
+    
+    def _iter_preserve_mode(self, iterator):
+        """
+        New packing mode where samples are preserved as complete units and never split.
+        Samples longer than the context length are skipped.
+        """
+        while True:
+            try:
+                # Initialize batch arrays
+                batch_input_ids = []
+                batch_train_mask = []
+                batch_text = []
+                batch_sources = []
+                
+                # Fill the batch with sequences
+                for _ in range(self.packing_batch_size):
+                    # Initialize sequence arrays
+                    seq_input_ids = []
+                    seq_train_mask = []
+                    seq_text = []
+                    seq_sources = []
+                    
+                    # Fill the sequence with samples
+                    while len(seq_input_ids) < self.packing_context_length:
+                        # Get the next sample
+                        sample = next(iterator)
+                        
+                        # Get sample tokens with EOS
+                        sample_tokens = sample["input_ids"] + [self.tokenizer.eos_token_id]
+                        sample_train_mask = sample["train_mask"] + [1]  # EOS token is trainable
+                        
+                        # Skip samples that are longer than the context length
+                        if len(sample_tokens) > self.packing_context_length:
+                            continue
+                        
+                        # Check if adding this sample would exceed the context length
+                        if len(seq_input_ids) + len(sample_tokens) > self.packing_context_length:
+                            # This sample doesn't fit, pad the sequence and move to the next one
+                            break
+                        
+                        # Add the sample to the sequence
+                        seq_input_ids.extend(sample_tokens)
+                        seq_train_mask.extend(sample_train_mask)
+                        seq_text.append(sample["text"])
+                        seq_sources.append(sample["hf_path"])
+                    
+                    # Pad the sequence if needed
+                    padding_length = self.packing_context_length - len(seq_input_ids)
+                    if padding_length > 0:
+                        # Use padding token for input_ids
+                        pad_token_id = self.tokenizer.pad_token_id if hasattr(self.tokenizer, 'pad_token_id') and self.tokenizer.pad_token_id is not None else 0
+                        seq_input_ids.extend([pad_token_id] * padding_length)
+                        # Use 0 for train_mask (don't train on padding)
+                        seq_train_mask.extend([0] * padding_length)
+                    
+                    # Add the sequence to the batch
+                    batch_input_ids.append(seq_input_ids)
+                    batch_train_mask.append(seq_train_mask)
+                    batch_text.extend(seq_text)
+                    batch_sources.extend(seq_sources)
+                
+                # Yield the batch
+                yield {
+                    "input_ids": torch.tensor(batch_input_ids, dtype=torch.long),
+                    "train_mask": torch.tensor(batch_train_mask, dtype=torch.bool),
+                    "text_arr": batch_text,
+                    "source_arr": batch_sources
+                }
+                
+            except StopIteration:
+                # If the iterator is exhausted, reshuffle the dataset and create a new iterator
+                self.reshuffle_dataset()
+                iterator = iter(self.full_dataset)
 
     def __len__(self):
         raise NotImplementedError("HFDatasetStreamer does not support __len__.")
