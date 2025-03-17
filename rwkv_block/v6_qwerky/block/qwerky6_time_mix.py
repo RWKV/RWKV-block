@@ -7,12 +7,20 @@ from torch import nn
 from transformers.models.qwen2.modeling_qwen2 import repeat_kv
 
 from .qwerky6_block_config_map import Qwerky6BlockConfigMap
-from fla.ops.gla import fused_recurrent_gla
+from fla.ops.gla import fused_recurrent_gla, chunk_gla, fused_chunk_gla
 from fla.ops.gla.naive import naive_recurrent_gla
+
+def remap_kwargs(func, mapping):
+    def remapped_func(*args, **kwargs):
+        kwargs = {mapping[k]: v for k, v in kwargs.items() if k in mapping}
+        return func(*args, **kwargs)
+    return remapped_func
 
 _time_mix_backends = {
     'naive': naive_recurrent_gla,
     'fused': fused_recurrent_gla,
+    'chunk': remap_kwargs(chunk_gla, {'gk': 'g'}),
+    'fused_chunk': remap_kwargs(fused_chunk_gla, {'gk': 'g'}),
     "auto": fused_recurrent_gla if torch.cuda.is_available() else naive_recurrent_gla
 }
 
