@@ -447,7 +447,8 @@ class RWKV7Model(RWKV7GooseModel, RWKV7PreTrainedModel):
 
             if self.gradient_checkpointing and self.training:
                 return checkpoint(
-                    block.__call__, in_x_state, in_rwkv_state, in_v_first
+                    block.__call__, in_x_state, in_rwkv_state, in_v_first,
+                    use_reentrant=True
                 )
             else:
                 return block(in_x_state, in_rwkv_state, in_v_first)
