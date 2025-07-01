@@ -120,6 +120,7 @@ class RWKV7GooseModel(nn.Module):
         hidden_size = self.configMap.hidden_size
         init_state_wkv = self.configMap.init_state_wkv
         num_hidden_layers = self.configMap.num_hidden_layers
+        hidden_size_att = self.configMap.get_hidden_size_att()
         head_size = self.configMap.head_size
 
         # Prepare the initial state
@@ -130,7 +131,7 @@ class RWKV7GooseModel(nn.Module):
 
             # Use the saved init_state if enabled
             # TODO: Consider letting the wkv_state dtype be a parameter
-            wkv_state = torch.zeros(batch_size, hidden_size // head_size, head_size, head_size, device=device, dtype=torch.float)
+            wkv_state = torch.zeros(batch_size, hidden_size_att // head_size, head_size, head_size, device=device, dtype=torch.float)
             if init_state_wkv and skip_init_state == False:
                 init_wkv = self.init_state[i]["wkv"]
                 for b in range(batch_size):
