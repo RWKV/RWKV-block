@@ -74,7 +74,10 @@ class RWKV7LayerBlock(torch.nn.Module):
         #     self.ln0 = nn.LayerNorm(hidden_size, dtype=dtype)
         # else:
         #     self.ln0 = nn.Identity()
-        self.ln0.reset_parameters()
+
+        # Reset if its not nn.Identity
+        if not isinstance(self.ln0, nn.Identity):
+            self.ln0.reset_parameters()
 
         # Call the sub blocks reset_parameters
         self.att.reset_parameters()
