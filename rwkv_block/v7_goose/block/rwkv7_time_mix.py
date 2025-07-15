@@ -424,7 +424,7 @@ def _run_tmix_backend(
         # Modified cuda version (with state output)
         w = -F.softplus(-w_lora_result) - 0.5
         xx, wkv_state_out = rwkv7_attn_cuda(r, w, k, v, kk, iclr, s0=wkv_state_in, HEAD_SIZE=HEAD_SIZE)
-    elif tmix_backend == "fla":
+    elif tmix_backend == "fla" or tmix_backend == "fla_chunk":
         # FLA based method for rwkv attention
         from .kernel.rwkv7_attn_fla import rwkv7_attn_fla
         # FLA runs with the softplus w
