@@ -2,4 +2,7 @@ torch>=2.5.1
 # torchaudio
 # torchvision
 # einops
-flash-linear-attention @ git+https://github.com/sustcsonglin/flash-linear-attention
+
+# flash-linear-attention @ git+https://github.com/sustcsonglin/flash-linear-attention
+flash-linear-attention==0.3.0
+# flash-linear-attention==0.1.2
